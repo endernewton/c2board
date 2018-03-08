@@ -3,3 +3,5 @@ dist
 *.egg-info
 runs/*
 .dropbox.attr
+*.pyc
+*_pb2.py

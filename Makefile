@@ -11,4 +11,5 @@ all:
 
 .PHONY: clean
 clean:
-	rm -rf c2board/src/*_pb2.py
+	rm -rf c2board/src/*_pb2.py*
+	rm -rf c2board/*.pyc
