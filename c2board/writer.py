@@ -235,6 +235,7 @@ class SummaryWriter(object):
         if not log_dir:
             import socket
             from datetime import datetime
+            # X: gethostname can be used to get hostname
             current_time = datetime.now().strftime('%b%d_%H-%M-%S')
             log_dir = os.path.join('runs', current_time + '_' + socket.gethostname() + comment)
         self.file_writer = FileWriter(logdir=log_dir)
@@ -388,6 +389,7 @@ class SummaryWriter(object):
         """
         import torch
         from distutils.version import LooseVersion
+        # X: interesting, loose version can be used to compare versions
         if LooseVersion(torch.__version__) >= LooseVersion("0.3.1"):
             pass
         else:

@@ -1,6 +1,10 @@
 .PHONY: default
 default: all
 
+.PHONY: proto
+proto:
+	protoc c2board/src/*.proto --python_out=.
+
 .PHONY: install
 install:
 	python2 setup.py install
@@ -8,8 +12,9 @@ install:
 .PHONY: all
 all:
 	protoc c2board/src/*.proto --python_out=.
+	python2 setup.py develop --user
 
 .PHONY: clean
 clean:
+	python2 setup.py develop --uninstall --user
 	rm -rf c2board/src/*_pb2.py*
-	rm -rf c2board/*.pyc
