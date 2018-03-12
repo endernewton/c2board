@@ -80,13 +80,13 @@ class EventsWriter(object):
 
     def close(self):
         '''Call self.flush().'''
-        self.flush()
-        self._writer.close()
+        if self._writer is not None:
+            self.flush()
+            self._writer.close()
 
     # X: make sure to close it on exit
     def __del__(self):
-        if self._writer is not None:
-            self._writer.close()
+        self.close()
 
 
 class _EventLoggerThread(threading.Thread):

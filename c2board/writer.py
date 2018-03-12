@@ -1,5 +1,4 @@
 """Provides an API for generating Event protocol buffers."""
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -60,6 +59,7 @@ class FileWriter(object):
         self._event_writer.close()
 
 
+# X: the biggest class to handle events
 class SummaryWriter(object):
     """Writes `Summary` directly to event files."""
     def __init__(self, log_dir=None, tag='default'):
@@ -67,7 +67,7 @@ class SummaryWriter(object):
             # X: just create a name for the log files
             log_dir = os.path.join('runs', tag)
         self._file_writer = FileWriter(logdir=log_dir)
-        # X: next is to create bins
+        # X: next is to create bins, amazing that it can fit all the values
         v = 1E-12
         buckets = []
         neg_buckets = []
@@ -77,9 +77,8 @@ class SummaryWriter(object):
             v *= 1.1
         self.default_bins = neg_buckets[::-1] + [0] + buckets
         self.text_tags = []
-        self.all_writers = {self._file_writer.get_logdir(): self._file_writer}
-        # {writer_id : [[timestamp, step, value],...],...}
-        self.scalar_dict = {} 
+        self.scalar_dict = {}
+        self.text_dir = None
 
     def __append_to_scalar_dict(self, 
                                 tag, 
@@ -98,116 +97,50 @@ class SummaryWriter(object):
 
     def add_scalar(self, tag, scalar_value, global_step=None):
         """Add scalar data to summary.
-
-        Args:
-            tag (string): Data identifier
-            scalar_value (float): Value to save
-            global_step (int): Global step value to record
         """
-        self._file_writer.add_summary(summary.scalar(tag, scalar_value), global_step)
-        self.__append_to_scalar_dict(tag, scalar_value, global_step, time.time())
-
-    def add_scalars(self, main_tag, tag_scalar_dict, global_step=None):
-        """Adds many scalar data to summary.
-
-        Args:
-            tag (string): Data identifier
-            main_tag (string): The parent name for the tags
-            tag_scalar_dict (dict): Key-value pair storing the tag and corresponding values
-            global_step (int): Global step value to record
-
-        Examples::
-
-            writer.add_scalars('run_14h',{'xsinx':i*np.sin(i/r),
-                                          'xcosx':i*np.cos(i/r),
-                                          'arctanx': numsteps*np.arctan(i/r)}, i)
-            # This function adds three values to the same scalar plot with the tag
-            # 'run_14h' in TensorBoard's scalar section.
-        """
-        timestamp = time.time()
-        fw_logdir = self._file_writer.get_logdir()
-        for tag, scalar_value in tag_scalar_dict.items():
-            fw_tag = fw_logdir + "/" + main_tag + "/" + tag
-            if fw_tag in self.all_writers.keys():
-                fw = self.all_writers[fw_tag]
-            else:
-                fw = FileWriter(logdir=fw_tag)
-                self.all_writers[fw_tag] = fw
-            fw.add_summary(summary.scalar(main_tag, scalar_value), global_step)
-            self.__append_to_scalar_dict(fw_tag, scalar_value, global_step, timestamp)
+        self._file_writer.add_summary(summary.scalar(tag, scalar_value), 
+                                    global_step)
+        self.__append_to_scalar_dict(tag, 
+                                    scalar_value, 
+                                    global_step, 
+                                    time.time())
 
     def export_scalars_to_json(self, path):
-        """Exports to the given path an ASCII file containing all the scalars written
-        so far by this instance, with the following format:
+        """Exports to the given path an ASCII file containing all the scalars
+        written so far by this instance, with the following format:
         {writer_id : [[timestamp, step, value], ...], ...}
         """
         with open(path, "w") as f:
             json.dump(self.scalar_dict, f)
 
     def add_histogram(self, tag, values, global_step=None, bins='tensorflow'):
-        """Add histogram to summary.
-
-        Args:
-            tag (string): Data identifier
-            values (numpy.array): Values to build histogram
-            global_step (int): Global step value to record
-            bins (string): one of {'tensorflow','auto', 'fd', ...}, this determines how the bins are made. You can find
-              other options in: https://docs.scipy.org/doc/numpy/reference/generated/numpy.histogram.html
-        """
+        """Add histogram to summary."""
         if bins == 'tensorflow':
             bins = self.default_bins
-        self._file_writer.add_summary(summary.histogram(tag, values, bins), global_step)
+        self._file_writer.add_summary(summary.histogram(tag, values, bins), 
+                                    global_step)
 
     def add_image(self, tag, img_tensor, global_step=None):
-        """Add image data to summary.
+        """Add image data to summary."""
+        self._file_writer.add_summary(summary.image(tag, img_tensor), 
+                                    global_step)
 
-        Note that this requires the ``pillow`` package.
-
-        Args:
-            tag (string): Data identifier
-            img_tensor (torch.Tensor): Image data
-            global_step (int): Global step value to record
-        Shape:
-            img_tensor: :math:`(3, H, W)`. Use ``torchvision.utils.make_grid()`` to prepare it is a good idea.
-        """
-        self._file_writer.add_summary(summary.image(tag, img_tensor), global_step)
-
-    def add_audio(self, tag, snd_tensor, global_step=None, sample_rate=44100):
-        """Add audio data to summary.
-
-        Args:
-            tag (string): Data identifier
-            snd_tensor (torch.Tensor): Sound data
-            global_step (int): Global step value to record
-            sample_rate (int): sample rate in Hz
-
-        Shape:
-            snd_tensor: :math:`(1, L)`. The values should lie between [-1, 1].
-        """
-        self._file_writer.add_summary(summary.audio(tag, snd_tensor, sample_rate=sample_rate), global_step)
-
+    # X: add text
     def add_text(self, tag, text_string, global_step=None):
-        """Add text data to summary.
-
-        Args:
-            tag (string): Data identifier
-            text_string (string): String to save
-            global_step (int): Global step value to record
-
-        Examples::
-
-            writer.add_text('lstm', 'This is an lstm', 0)
-            writer.add_text('rnn', 'This is an rnn', 10)
-        """
+        """Add text data to summary."""
         self._file_writer.add_summary(summary.text(tag, text_string), global_step)
+        # X: seems like all the text tags are added to a json file
         if tag not in self.text_tags:
             self.text_tags.append(tag)
-            extension_dir = self._file_writer.get_logdir() + '/plugins/tensorboard_text/'
-            if not os.path.exists(extension_dir):
-                os.makedirs(extension_dir)
-            with open(extension_dir + 'tensors.json', 'w') as fp:
+            if not self.text_dir:
+                text_dir =os.path.join(self._file_writer.get_logdir(),
+                                        'plugins',
+                                        'tensorboard_text')
+                os.makedirs(text_dir)
+            with open(os.path.join(text_dir, 'tensors.json'), 'w') as fp:
                 json.dump(self.text_tags, fp)
 
+    # X: graph is the last part
     def add_graph(self, model, input_to_model, verbose=False):
         # prohibit second call?
         # no, let tensorboard handles it and show its warning message.
@@ -232,34 +165,16 @@ class SummaryWriter(object):
                 return
         self._file_writer.add_graph(graph(model, input_to_model, verbose))
 
+    def add_audio(self, tag, snd_tensor, global_step=None, sample_rate=44100):
+        raise NotImplementedError
+
     def add_pr_curve(self, tag, labels, predictions, global_step=None, num_thresholds=127, weights=None):
-        """Adds precision recall curve.
-
-        Args:
-            tag (string): Data identifier
-            labels (torch.Tensor): Ground truth data. Binary label for each element.
-            predictions (torch.Tensor): The probability that an element be classified as true. Value should in [0, 1]
-            global_step (int): Global step value to record
-            num_thresholds (int): Number of thresholds used to draw the curve.
-
-        """
-        from .x2num import make_np
-        labels = make_np(labels)
-        predictions = make_np(predictions)
-        self._file_writer.add_summary(summary.pr_curve(tag, labels, predictions, num_thresholds, weights), global_step)
+        raise NotImplementedError
 
     def close(self):
-        if self._file_writer is None:
-            return  # ignore double close
-        self._file_writer.flush()
-        self._file_writer.close()
-        for path, writer in self.all_writers.items():
-            writer.flush()
-            writer.close()
-        self._file_writer = self.all_writers = None
+        if self._file_writer is not None:
+            self._file_writer.flush()
+            self._file_writer.close()
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __del__(self):
         self.close()

@@ -9,6 +9,7 @@ def make_np(x, modality=None):
     # if already numpy, return
     if isinstance(x, np.ndarray):
         return x
+    # X: just get the scalar value back
     if np.isscalar(x):
         return np.array([x])
     assert isinstance(x, str), 'ERROR: should pass name of the blob here'
@@ -44,7 +45,8 @@ def make_grid(I, ncols=4):
 
 # X: tensorflow is NHWC
 # X: caffe2 is NCHW
-def _prepare_image(I):
+# X: mean_pixs is in RGB order
+def _prepare_image(I, mean_pixs=(122.7717, 115.9465, 102.9801)):
     assert isinstance(I, np.ndarray), 'ERROR: should pass numpy array here'
     assert I.ndim == 2 or I.ndim == 3 or I.ndim == 4, \
         'ERROR: image should have dimensions of 2, 3, or 4'
@@ -60,5 +62,7 @@ def _prepare_image(I):
         I = np.concatenate((I, I, I), 0)  # 3xHxW
     # X: so that finally it is HWC
     I = I.transpose(1, 2, 0)
+    # X: so the image is RGB instead of BGR
+    I = I[...,::-1] + mean_pixs
 
     return I
