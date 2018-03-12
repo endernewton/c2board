@@ -1,61 +1,32 @@
-# DO NOT alter/distruct/free input object !
-
+# X: this should be the script to convert any objects to numpy arrays
+# X: do not do any image processing here
 import numpy as np
 
+from caffe2.python import workspace
 
-def makenp(x, modality=None):
+
+def make_np(x, modality=None):
     # if already numpy, return
     if isinstance(x, np.ndarray):
-        if modality == 'IMG' and x.dtype == np.uint8:
-            return x.astype(np.float32) / 255.0
         return x
     if np.isscalar(x):
         return np.array([x])
-    if 'torch' in str(type(x)):
-        return pytorch_np(x, modality)
-    if 'chainer' in str(type(x)):
-        return chainer_np(x, modality)
-    if 'mxnet' in str(type(x)):
-        return mxnet_np(x, modality)
+    assert isinstance(x, str), 'ERROR: should pass name of the blob here'
+    # X: everything else, just fetch the blob given the name
+    return caffe2_num(x, modality)
 
-
-def pytorch_np(x, modality):
-    import torch
-    if isinstance(x, torch.autograd.Variable):
-        x = x.data
-    x = x.cpu().numpy()
+def caffe2_num(x, modality=None):
+    # get the string and output the caffe2 numpy array
+    x = workspace.FetchBlob(x)
     if modality == 'IMG':
         x = _prepare_image(x)
     return x
 
-
-def theano_np(x):
-    import theano
-    pass
-
-
-def caffe2_np(x):
-    pass
-
-
-def mxnet_np(x, modality):
-    x = x.asnumpy()
-    if modality == 'IMG':
-        x = _prepare_image(x)
-    return x
-
-
-def chainer_np(x, modality):
-    import chainer
-    x = chainer.cuda.to_cpu(x.data)
-    if modality == 'IMG':
-        x = _prepare_image(x)
-    return x
-
-
-def make_grid(I, ncols=8):
-    assert isinstance(I, np.ndarray), 'plugin error, should pass numpy array here'
-    assert I.ndim == 4 and I.shape[1] == 3
+# X: to put images in the grid
+def make_grid(I, ncols=4):
+    assert isinstance(I, np.ndarray), 'ERROR: should pass numpy array here'
+    assert I.ndim == 4 and I.shape[1] == 3, \
+        'ERROR: should have dimension for N to put them in grid'
     nimg = I.shape[0]
     H = I.shape[2]
     W = I.shape[3]
@@ -71,10 +42,12 @@ def make_grid(I, ncols=8):
             i = i + 1
     return canvas
 
-
+# X: tensorflow is NHWC
+# X: caffe2 is NCHW
 def _prepare_image(I):
-    assert isinstance(I, np.ndarray), 'plugin error, should pass numpy array here'
-    assert I.ndim == 2 or I.ndim == 3 or I.ndim == 4
+    assert isinstance(I, np.ndarray), 'ERROR: should pass numpy array here'
+    assert I.ndim == 2 or I.ndim == 3 or I.ndim == 4, \
+        'ERROR: image should have dimensions of 2, 3, or 4'
     if I.ndim == 4:  # NCHW
         if I.shape[1] == 1:  # N1HW
             I = np.concatenate((I, I, I), 1)  # N3HW
@@ -85,6 +58,7 @@ def _prepare_image(I):
     if I.ndim == 2:  # HxW
         I = np.expand_dims(I, 0)  # 1xHxW
         I = np.concatenate((I, I, I), 0)  # 3xHxW
+    # X: so that finally it is HWC
     I = I.transpose(1, 2, 0)
 
     return I

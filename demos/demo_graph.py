@@ -53,8 +53,6 @@ dummy_input = Variable(torch.rand(13, 1, 28, 28))
 
 model = Net1()
 with SummaryWriter(comment='Net1') as writer:
-    import pdb
-    pdb.set_trace()
     writer.add_graph(model, (dummy_input, ))
 
 model = Net2()

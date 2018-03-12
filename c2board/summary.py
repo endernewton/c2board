@@ -46,7 +46,7 @@ from .src.summary_pb2 import SummaryMetadata
 from .src.tensor_pb2 import TensorProto
 from .src.tensor_shape_pb2 import TensorShapeProto
 from .src.plugin_pr_curve_pb2 import PrCurvePluginData
-from .x2num import makenp
+from .x2num import make_np
 
 _INVALID_TAG_CHARACTERS = _re.compile(r'[^-/\w\.]')
 
@@ -83,7 +83,7 @@ def scalar(name, scalar, collections=None):
       ValueError: If tensor has the wrong shape or type.
     """
     name = _clean_tag(name)
-    scalar = makenp(scalar)
+    scalar = make_np(scalar)
     assert(scalar.squeeze().ndim == 0), 'scalar should be 0D'
     scalar = float(scalar)
     return Summary(value=[Summary.Value(tag=name, simple_value=scalar)])
@@ -108,7 +108,7 @@ def histogram(name, values, bins, collections=None):
       buffer.
     """
     name = _clean_tag(name)
-    values = makenp(values)
+    values = make_np(values)
     hist = make_histogram(values.astype(float), bins)
     return Summary(value=[Summary.Value(tag=name, histo=hist)])
 
@@ -152,7 +152,7 @@ def image(tag, tensor):
       buffer.
     """
     tag = _clean_tag(tag)
-    tensor = makenp(tensor, 'IMG')
+    tensor = make_np(tensor, 'IMG')
     tensor = tensor.astype(np.float32)
     tensor = (tensor * 255).astype(np.uint8)
     image = make_image(tensor)
@@ -176,7 +176,7 @@ def make_image(tensor):
 
 
 def audio(tag, tensor, sample_rate=44100):
-    tensor = makenp(tensor)
+    tensor = make_np(tensor)
     tensor = tensor.squeeze()
     if abs(tensor).max() > 1:
         print('warning: audio amplitude out of range, auto clipped.')

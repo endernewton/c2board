@@ -54,10 +54,10 @@ def graph(model, args, verbose=False):
         torch.onnx._optimize_trace(trace, False)
     else:
         torch.onnx._optimize_trace(trace)
-    graph = trace.graph()
+    current_graph = trace.graph()
     if verbose:
-        print(graph)
-    list_of_nodes = parse(graph)
+        print(current_graph)
+    list_of_nodes = parse(current_graph)
     nodes = []
     for node in list_of_nodes:
         nodes.append(
