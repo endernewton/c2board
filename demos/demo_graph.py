@@ -52,27 +52,27 @@ class Net2(nn.Module):
 dummy_input = Variable(torch.rand(13, 1, 28, 28))
 
 model = Net1()
-with SummaryWriter(comment='Net1') as writer:
+with SummaryWriter(tag='Net1') as writer:
     writer.add_graph(model, (dummy_input, ))
 
 model = Net2()
-with SummaryWriter(comment='Net2') as w:
+with SummaryWriter(tag='Net2') as w:
     w.add_graph(model, (dummy_input, ))
 
 dummy_input = Variable(torch.rand(1, 3, 224, 224))
 
-with SummaryWriter(comment='alexnet') as w:
+with SummaryWriter(tag='alexnet') as w:
     model = torchvision.models.alexnet()
     w.add_graph(model, (dummy_input, ))
 
-with SummaryWriter(comment='vgg19') as w:
+with SummaryWriter(tag='vgg19') as w:
     model = torchvision.models.vgg19()
     w.add_graph(model, (dummy_input, ))
 
-with SummaryWriter(comment='densenet121') as w:
+with SummaryWriter(tag='densenet121') as w:
     model = torchvision.models.densenet121()
     w.add_graph(model, (dummy_input, ))
 
-with SummaryWriter(comment='resnet18') as w:
+with SummaryWriter(tag='resnet18') as w:
     model = torchvision.models.resnet18()
     w.add_graph(model, (dummy_input, ))

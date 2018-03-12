@@ -1,92 +1,38 @@
-# Copyright 2016 The TensorFlow Authors. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
 """Provides an API for generating Event protocol buffers."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import time
 import json
 import os
-from .src import event_pb2
-from .src import summary_pb2
-from .src import graph_pb2
-from .event_file_writer import EventFileWriter
-from .summary import scalar, histogram, image, audio, text, pr_curve
-from .graph import graph
-from .graph_onnx import gg
+import time
+
+from c2board.src import event_pb2
+from c2board.src import summary_pb2
+from c2board.src import graph_pb2
+from c2board.x2num import make_np
+
+from c2board.event_file_writer import EventFileWriter
+from c2board.graph import graph
+import c2board.summary as summary
 
 
-class SummaryToEventTransformer(object):
-    """Abstractly implements the SummaryWriter API.
-    This API basically implements a number of endpoints (add_summary,
-    add_session_log, etc). The endpoints all generate an event protobuf, which is
-    passed to the contained event_writer.
-    @@__init__
-    @@add_summary
-    @@add_session_log
-    @@add_graph
-    @@add_meta_graph
-    @@add_run_metadata
-    """
+class FileWriter(object):
+    """Writes `Summary` protocol buffers to event files."""
 
-    def __init__(self, event_writer, graph=None, graph_def=None):
-        """Creates a `SummaryWriter` and an event file.
-        On construction the summary writer creates a new event file in `logdir`.
-        This event file will contain `Event` protocol buffers constructed when you
-        call one of the following functions: `add_summary()`, `add_session_log()`,
-        `add_event()`, or `add_graph()`.
-        If you pass a `Graph` to the constructor it is added to
-        the event file. (This is equivalent to calling `add_graph()` later).
-        TensorBoard will pick the graph from the file and display it graphically so
-        you can interactively explore the graph you built. You will usually pass
-        the graph from the session in which you launched it:
-        ```python
-        ...create a graph...
-        # Launch the graph in a session.
-        sess = tf.Session()
-        # Create a summary writer, add the 'graph' to the event file.
-        writer = tf.summary.FileWriter(<some-directory>, sess.graph)
-        ```
-        Args:
-          event_writer: An EventWriter. Implements add_event method.
-          graph: A `Graph` object, such as `sess.graph`.
-          graph_def: DEPRECATED: Use the `graph` argument instead.
-        """
-        self.event_writer = event_writer
-        # For storing used tags for session.run() outputs.
-        self._session_run_tags = {}
-        # TODO(zihaolucky). pass this an empty graph to check whether it's necessary.
-        # currently we don't support graph in MXNet using tensorboard.
+    def __init__(self, 
+                logdir,
+                max_queue=10,
+                flush_secs=120):
+        """Creates a `SummaryWriter` and an event file."""
+        self._event_writer = EventFileWriter(logdir, max_queue, flush_secs)
+
+    def get_logdir(self):
+        return self._event_writer.get_logdir()
 
     def add_summary(self, summary, global_step=None):
-        """Adds a `Summary` protocol buffer to the event file.
-        This method wraps the provided summary in an `Event` protocol buffer
-        and adds it to the event file.
-        You can pass the result of evaluating any summary op, using
-        [`Session.run()`](client.md#Session.run) or
-        [`Tensor.eval()`](framework.md#Tensor.eval), to this
-        function. Alternatively, you can pass a `tf.Summary` protocol
-        buffer that you populate with your own data. The latter is
-        commonly done to report evaluation results in event files.
-        Args:
-          summary: A `Summary` protocol buffer, optionally serialized as a string.
-          global_step: Number. Optional global step value to record with the
-            summary.
-        """
+        """Adds a `Summary` protocol buffer to the event file."""
         if isinstance(summary, bytes):
             summ = summary_pb2.Summary()
             summ.ParseFromString(summary)
@@ -94,150 +40,34 @@ class SummaryToEventTransformer(object):
         event = event_pb2.Event(summary=summary)
         self._add_event(event, global_step)
 
-    def add_graph_onnx(self, graph):
-        """Adds a `Graph` protocol buffer to the event file.
-        """
-        event = event_pb2.Event(graph_def=graph.SerializeToString())
-        self._add_event(event, None)
-
+    # X: this is the function to add the graph to the event
     def add_graph(self, graph):
-        """Adds a `Graph` protocol buffer to the event file.
-        """
+        """Adds a `Graph` protocol buffer to the event file."""
         event = event_pb2.Event(graph_def=graph.SerializeToString())
         self._add_event(event, None)
 
-    def add_session_log(self, session_log, global_step=None):
-        """Adds a `SessionLog` protocol buffer to the event file.
-        This method wraps the provided session in an `Event` protocol buffer
-        and adds it to the event file.
-        Args:
-          session_log: A `SessionLog` protocol buffer.
-          global_step: Number. Optional global step value to record with the
-            summary.
-        """
-        event = event_pb2.Event(session_log=session_log)
-        self._add_event(event, global_step)
-
+    # X: the underlying function to add an event
     def _add_event(self, event, step):
         event.wall_time = time.time()
         if step is not None:
             event.step = int(step)
-        self.event_writer.add_event(event)
-
-
-class FileWriter(SummaryToEventTransformer):
-    """Writes `Summary` protocol buffers to event files.
-    The `FileWriter` class provides a mechanism to create an event file in a
-    given directory and add summaries and events to it. The class updates the
-    file contents asynchronously. This allows a training program to call methods
-    to add data to the file directly from the training loop, without slowing down
-    training.
-    @@__init__
-    @@add_summary
-    @@add_session_log
-    @@add_event
-    @@add_graph
-    @@add_run_metadata
-    @@get_logdir
-    @@flush
-    @@close
-    """
-
-    def __init__(self,
-                 logdir,
-                 graph=None,
-                 max_queue=10,
-                 flush_secs=120,
-                 graph_def=None):
-        """Creates a `FileWriter` and an event file.
-        On construction the summary writer creates a new event file in `logdir`.
-        This event file will contain `Event` protocol buffers constructed when you
-        call one of the following functions: `add_summary()`, `add_session_log()`,
-        `add_event()`, or `add_graph()`.
-        If you pass a `Graph` to the constructor it is added to
-        the event file. (This is equivalent to calling `add_graph()` later).
-        TensorBoard will pick the graph from the file and display it graphically so
-        you can interactively explore the graph you built. You will usually pass
-        the graph from the session in which you launched it:
-        ```python
-        ...create a graph...
-        # Launch the graph in a session.
-        sess = tf.Session()
-        # Create a summary writer, add the 'graph' to the event file.
-        writer = tf.summary.FileWriter(<some-directory>, sess.graph)
-        ```
-        The other arguments to the constructor control the asynchronous writes to
-        the event file:
-        *  `flush_secs`: How often, in seconds, to flush the added summaries
-           and events to disk.
-        *  `max_queue`: Maximum number of summaries or events pending to be
-           written to disk before one of the 'add' calls block.
-        Args:
-          logdir: A string. Directory where event file will be written.
-          graph: A `Graph` object, such as `sess.graph`.
-          max_queue: Integer. Size of the queue for pending events and summaries.
-          flush_secs: Number. How often, in seconds, to flush the
-            pending events and summaries to disk.
-          graph_def: DEPRECATED: Use the `graph` argument instead.
-        """
-        event_writer = EventFileWriter(logdir, max_queue, flush_secs)
-        super(FileWriter, self).__init__(event_writer, graph, graph_def)
-
-    def get_logdir(self):
-        """Returns the directory where event file will be written."""
-        return self.event_writer.get_logdir()
-
-    def add_event(self, event):
-        """Adds an event to the event file.
-        Args:
-          event: An `Event` protocol buffer.
-        """
-        self.event_writer.add_event(event)
+        self._event_writer.add_event(event)
 
     def flush(self):
-        """Flushes the event file to disk.
-        Call this method to make sure that all pending events have been written to
-        disk.
-        """
-        self.event_writer.flush()
+        self._event_writer.flush()
 
     def close(self):
-        """Flushes the event file to disk and close the file.
-        Call this method when you do not need the summary writer anymore.
-        """
-        self.event_writer.close()
-
-    def reopen(self):
-        """Reopens the EventFileWriter.
-        Can be called after `close()` to add more events in the same directory.
-        The events will go into a new events file.
-        Does nothing if the EventFileWriter was not closed.
-        """
-        self.event_writer.reopen()
+        self._event_writer.close()
 
 
 class SummaryWriter(object):
-    """Writes `Summary` directly to event files.
-    The `SummaryWriter` class provides a high-level api to create an event file in a
-    given directory and add summaries and events to it. The class updates the
-    file contents asynchronously. This allows a training program to call methods
-    to add data to the file directly from the training loop, without slowing down
-    training.
-    """
-    def __init__(self, log_dir=None, comment=''):
-        """
-        Args:
-            log_dir (string): save location, default is: runs/**CURRENT_DATETIME_HOSTNAME**, which changes after each
-              run. Use hierarchical folder structure to compare between runs easily. e.g. 'runs/exp1', 'runs/exp2'
-            comment (string): comment that appends to the default log_dir
-        """
+    """Writes `Summary` directly to event files."""
+    def __init__(self, log_dir=None, tag='default'):
         if not log_dir:
-            import socket
-            from datetime import datetime
-            # X: gethostname can be used to get hostname
-            current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-            log_dir = os.path.join('runs', current_time + '_' + socket.gethostname() + comment)
-        self.file_writer = FileWriter(logdir=log_dir)
+            # X: just create a name for the log files
+            log_dir = os.path.join('runs', tag)
+        self._file_writer = FileWriter(logdir=log_dir)
+        # X: next is to create bins
         v = 1E-12
         buckets = []
         neg_buckets = []
@@ -247,19 +77,24 @@ class SummaryWriter(object):
             v *= 1.1
         self.default_bins = neg_buckets[::-1] + [0] + buckets
         self.text_tags = []
-        #
-        self.all_writers = {self.file_writer.get_logdir(): self.file_writer}
-        self.scalar_dict = {}  # {writer_id : [[timestamp, step, value],...],...}
+        self.all_writers = {self._file_writer.get_logdir(): self._file_writer}
+        # {writer_id : [[timestamp, step, value],...],...}
+        self.scalar_dict = {} 
 
-    def __append_to_scalar_dict(self, tag, scalar_value, global_step,
+    def __append_to_scalar_dict(self, 
+                                tag, 
+                                scalar_value, 
+                                global_step,
                                 timestamp):
-        """This adds an entry to the self.scalar_dict datastructure with format
+        """This adds an entry to the self.scalar_dict data structure with format
         {writer_id : [[timestamp, step, value], ...], ...}.
         """
-        from .x2num import make_np
+        # X: it seems like it will just create a dictionary for each scalar
         if tag not in self.scalar_dict.keys():
             self.scalar_dict[tag] = []
-        self.scalar_dict[tag].append([timestamp, global_step, float(make_np(scalar_value))])
+        self.scalar_dict[tag].append([timestamp, 
+                                    global_step, 
+                                    float(scalar_value)])
 
     def add_scalar(self, tag, scalar_value, global_step=None):
         """Add scalar data to summary.
@@ -269,7 +104,7 @@ class SummaryWriter(object):
             scalar_value (float): Value to save
             global_step (int): Global step value to record
         """
-        self.file_writer.add_summary(scalar(tag, scalar_value), global_step)
+        self._file_writer.add_summary(summary.scalar(tag, scalar_value), global_step)
         self.__append_to_scalar_dict(tag, scalar_value, global_step, time.time())
 
     def add_scalars(self, main_tag, tag_scalar_dict, global_step=None):
@@ -290,7 +125,7 @@ class SummaryWriter(object):
             # 'run_14h' in TensorBoard's scalar section.
         """
         timestamp = time.time()
-        fw_logdir = self.file_writer.get_logdir()
+        fw_logdir = self._file_writer.get_logdir()
         for tag, scalar_value in tag_scalar_dict.items():
             fw_tag = fw_logdir + "/" + main_tag + "/" + tag
             if fw_tag in self.all_writers.keys():
@@ -298,7 +133,7 @@ class SummaryWriter(object):
             else:
                 fw = FileWriter(logdir=fw_tag)
                 self.all_writers[fw_tag] = fw
-            fw.add_summary(scalar(main_tag, scalar_value), global_step)
+            fw.add_summary(summary.scalar(main_tag, scalar_value), global_step)
             self.__append_to_scalar_dict(fw_tag, scalar_value, global_step, timestamp)
 
     def export_scalars_to_json(self, path):
@@ -321,7 +156,7 @@ class SummaryWriter(object):
         """
         if bins == 'tensorflow':
             bins = self.default_bins
-        self.file_writer.add_summary(histogram(tag, values, bins), global_step)
+        self._file_writer.add_summary(summary.histogram(tag, values, bins), global_step)
 
     def add_image(self, tag, img_tensor, global_step=None):
         """Add image data to summary.
@@ -335,7 +170,7 @@ class SummaryWriter(object):
         Shape:
             img_tensor: :math:`(3, H, W)`. Use ``torchvision.utils.make_grid()`` to prepare it is a good idea.
         """
-        self.file_writer.add_summary(image(tag, img_tensor), global_step)
+        self._file_writer.add_summary(summary.image(tag, img_tensor), global_step)
 
     def add_audio(self, tag, snd_tensor, global_step=None, sample_rate=44100):
         """Add audio data to summary.
@@ -349,7 +184,7 @@ class SummaryWriter(object):
         Shape:
             snd_tensor: :math:`(1, L)`. The values should lie between [-1, 1].
         """
-        self.file_writer.add_summary(audio(tag, snd_tensor, sample_rate=sample_rate), global_step)
+        self._file_writer.add_summary(summary.audio(tag, snd_tensor, sample_rate=sample_rate), global_step)
 
     def add_text(self, tag, text_string, global_step=None):
         """Add text data to summary.
@@ -364,17 +199,14 @@ class SummaryWriter(object):
             writer.add_text('lstm', 'This is an lstm', 0)
             writer.add_text('rnn', 'This is an rnn', 10)
         """
-        self.file_writer.add_summary(text(tag, text_string), global_step)
+        self._file_writer.add_summary(summary.text(tag, text_string), global_step)
         if tag not in self.text_tags:
             self.text_tags.append(tag)
-            extension_dir = self.file_writer.get_logdir() + '/plugins/tensorboard_text/'
+            extension_dir = self._file_writer.get_logdir() + '/plugins/tensorboard_text/'
             if not os.path.exists(extension_dir):
                 os.makedirs(extension_dir)
             with open(extension_dir + 'tensors.json', 'w') as fp:
                 json.dump(self.text_tags, fp)
-
-    def add_graph_onnx(self, prototxt):
-        self.file_writer.add_graph_onnx(gg(prototxt))
 
     def add_graph(self, model, input_to_model, verbose=False):
         # prohibit second call?
@@ -398,7 +230,7 @@ class SummaryWriter(object):
             if not hasattr(torch.autograd.Variable, 'grad_fn'):
                 print('add_graph() only supports PyTorch v0.2.')
                 return
-        self.file_writer.add_graph(graph(model, input_to_model, verbose))
+        self._file_writer.add_graph(graph(model, input_to_model, verbose))
 
     def add_pr_curve(self, tag, labels, predictions, global_step=None, num_thresholds=127, weights=None):
         """Adds precision recall curve.
@@ -414,17 +246,17 @@ class SummaryWriter(object):
         from .x2num import make_np
         labels = make_np(labels)
         predictions = make_np(predictions)
-        self.file_writer.add_summary(pr_curve(tag, labels, predictions, num_thresholds, weights), global_step)
+        self._file_writer.add_summary(summary.pr_curve(tag, labels, predictions, num_thresholds, weights), global_step)
 
     def close(self):
-        if self.file_writer is None:
+        if self._file_writer is None:
             return  # ignore double close
-        self.file_writer.flush()
-        self.file_writer.close()
+        self._file_writer.flush()
+        self._file_writer.close()
         for path, writer in self.all_writers.items():
             writer.flush()
             writer.close()
-        self.file_writer = self.all_writers = None
+        self._file_writer = self.all_writers = None
 
     def __enter__(self):
         return self
