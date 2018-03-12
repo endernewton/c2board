@@ -28,7 +28,6 @@ from .event_file_writer import EventFileWriter
 from .summary import scalar, histogram, image, audio, text, pr_curve
 from .graph import graph
 from .graph_onnx import gg
-from .embedding import make_mat, make_sprite, make_tsv, append_pbtxt
 
 
 class SummaryToEventTransformer(object):
@@ -400,59 +399,6 @@ class SummaryWriter(object):
                 print('add_graph() only supports PyTorch v0.2.')
                 return
         self.file_writer.add_graph(graph(model, input_to_model, verbose))
-
-    def add_embedding(self, mat, metadata=None, label_img=None, global_step=None, tag='default'):
-        """Add embedding projector data to summary.
-
-        Args:
-            mat (torch.Tensor): A matrix which each row is the feature vector of the data point
-            metadata (list): A list of labels, each element will be convert to string
-            label_img (torch.Tensor): Images correspond to each data point
-            global_step (int): Global step value to record
-            tag (string): Name for the embedding
-        Shape:
-            mat: :math:`(N, D)`, where N is number of data and D is feature dimension
-
-            label_img: :math:`(N, C, H, W)`
-
-        Examples::
-
-            import keyword
-            import torch
-            meta = []
-            while len(meta)<100:
-                meta = meta+keyword.kwlist # get some strings
-            meta = meta[:100]
-
-            for i, v in enumerate(meta):
-                meta[i] = v+str(i)
-
-            label_img = torch.rand(100, 3, 10, 32)
-            for i in range(100):
-                label_img[i]*=i/100.0
-
-            writer.add_embedding(torch.randn(100, 5), metadata=meta, label_img=label_img)
-            writer.add_embedding(torch.randn(100, 5), label_img=label_img)
-            writer.add_embedding(torch.randn(100, 5), metadata=meta)
-        """
-        if global_step is None:
-            global_step = 0
-            # clear pbtxt?
-        save_path = os.path.join(self.file_writer.get_logdir(), str(global_step).zfill(5))
-        try:
-            os.makedirs(save_path)
-        except OSError:
-            print('warning: Embedding dir exists, did you set global_step for add_embedding()?')
-        if metadata is not None:
-            assert mat.size(0) == len(metadata), '#labels should equal with #data points'
-            make_tsv(metadata, save_path)
-        if label_img is not None:
-            assert mat.size(0) == label_img.size(0), '#images should equal with #data points'
-            make_sprite(label_img, save_path)
-        assert mat.dim() == 2, 'mat should be 2D, where mat.size(0) is the number of data points'
-        make_mat(mat.tolist(), save_path)
-        # new funcion to append to the config file a new embedding
-        append_pbtxt(metadata, label_img, self.file_writer.get_logdir(), str(global_step).zfill(5), tag)
 
     def add_pr_curve(self, tag, labels, predictions, global_step=None, num_thresholds=127, weights=None):
         """Adds precision recall curve.
