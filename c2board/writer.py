@@ -26,6 +26,7 @@ class FileWriter(object):
                 flush_secs=120):
         """Creates a `SummaryWriter` and an event file."""
         self._event_writer = EventFileWriter(logdir, max_queue, flush_secs)
+        self._closed = False
 
     def get_logdir(self):
         return self._event_writer.get_logdir()
@@ -57,6 +58,7 @@ class FileWriter(object):
 
     def close(self):
         self._event_writer.close()
+        self._closed = True
 
 
 # X: the biggest class to handle events
@@ -175,7 +177,7 @@ class SummaryWriter(object):
         self._file_writer.add_graph(graph_torch(model, input_to_model, verbose))
 
     def close(self):
-        if self._file_writer is not None:
+        if not self._file_writer._closed:
             self._file_writer.flush()
             self._file_writer.close()
 

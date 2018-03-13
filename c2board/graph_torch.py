@@ -22,9 +22,6 @@ def parse(graph):
         uname = next(iter(n.outputs())).uniqueName()
         assert n.scopeName() != '', '{} has empty scope name'.format(n)
         scope[uname] = n.scopeName()
-    if LooseVersion(torch.__version__) >= LooseVersion("0.4"):
-        scope['0'] = 'input'
-    else:
         scope['1'] = 'input'
 
     nodes = []
@@ -35,13 +32,19 @@ def parse(graph):
             continue
         inputs = [replace(i.uniqueName(), scope) for i in n.inputs()]
         uname = next(iter(n.outputs())).uniqueName()  # FIXME: only first output is considered
-        nodes.append({'name': replace(uname, scope), 'op': n.kind(), 'inputs': inputs, 'attr': attrs})
+        nodes.append({'name': replace(uname, scope), 
+                    'op': n.kind(), 
+                    'inputs': inputs, 
+                    'attr': attrs})
 
     for n in graph.inputs():
         uname = n.uniqueName()
         if uname not in scope.keys():
             scope[uname] = 'unused'
-        nodes.append({'name': replace(uname, scope), 'op': 'Parameter', 'inputs': [], 'attr': str(n.type())})
+        nodes.append({'name': replace(uname, scope), 
+                    'op': 'Parameter', 
+                    'inputs': [], 
+                    'attr': str(n.type())})
 
     return nodes
 
@@ -59,4 +62,5 @@ def graph_torch(model, args, verbose=False):
                     op=node['op'], 
                     input=node['inputs'],
                     attr={'lanpa': AttrValue(s=node['attr'].encode(encoding='utf_8'))}))
+        
     return GraphDef(node=nodes, versions=VersionDef(producer=22))
