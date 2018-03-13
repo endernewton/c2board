@@ -13,7 +13,7 @@ from c2board.src import graph_pb2
 from c2board.x2num import make_np
 
 from c2board.event_file_writer import EventFileWriter
-from c2board.graph import graph
+from c2board.graph_torch import graph_torch
 import c2board.summary as summary
 
 
@@ -141,7 +141,16 @@ class SummaryWriter(object):
                 json.dump(self.text_tags, fp)
 
     # X: graph is the last part
-    def add_graph(self, model, input_to_model, verbose=False):
+    def add_graph(self, model):
+        raise NotImplementedError
+
+    def add_audio(self, tag, snd_tensor, global_step=None, sample_rate=44100):
+        raise NotImplementedError
+
+    def add_pr_curve(self, tag, labels, predictions, global_step=None, num_thresholds=127, weights=None):
+        raise NotImplementedError
+
+    def add_graph_torch(self, model, input_to_model, verbose=False):
         # prohibit second call?
         # no, let tensorboard handles it and show its warning message.
         """Add graph data to summary.
@@ -163,13 +172,7 @@ class SummaryWriter(object):
             if not hasattr(torch.autograd.Variable, 'grad_fn'):
                 print('add_graph() only supports PyTorch v0.2.')
                 return
-        self._file_writer.add_graph(graph(model, input_to_model, verbose))
-
-    def add_audio(self, tag, snd_tensor, global_step=None, sample_rate=44100):
-        raise NotImplementedError
-
-    def add_pr_curve(self, tag, labels, predictions, global_step=None, num_thresholds=127, weights=None):
-        raise NotImplementedError
+        self._file_writer.add_graph(graph_torch(model, input_to_model, verbose))
 
     def close(self):
         if self._file_writer is not None:
@@ -177,4 +180,10 @@ class SummaryWriter(object):
             self._file_writer.close()
 
     def __del__(self):
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()

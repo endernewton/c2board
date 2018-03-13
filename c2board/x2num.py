@@ -2,7 +2,7 @@
 # X: do not do any image processing here
 import numpy as np
 
-from caffe2.python import workspace
+# from caffe2.python import workspace
 
 
 def make_np(x, modality=None):

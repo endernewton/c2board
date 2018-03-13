@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 from torch.autograd import Variable
-from c2board import SummaryWriter
+from c2board.writer import SummaryWriter
 
 
 class Net1(nn.Module):
@@ -53,26 +53,26 @@ dummy_input = Variable(torch.rand(13, 1, 28, 28))
 
 model = Net1()
 with SummaryWriter(tag='Net1') as writer:
-    writer.add_graph(model, (dummy_input, ))
+    writer.add_graph_torch(model, (dummy_input, ))
 
 model = Net2()
 with SummaryWriter(tag='Net2') as w:
-    w.add_graph(model, (dummy_input, ))
+    w.add_graph_torch(model, (dummy_input, ))
 
 dummy_input = Variable(torch.rand(1, 3, 224, 224))
 
 with SummaryWriter(tag='alexnet') as w:
     model = torchvision.models.alexnet()
-    w.add_graph(model, (dummy_input, ))
+    w.add_graph_torch(model, (dummy_input, ))
 
 with SummaryWriter(tag='vgg19') as w:
     model = torchvision.models.vgg19()
-    w.add_graph(model, (dummy_input, ))
+    w.add_graph_torch(model, (dummy_input, ))
 
 with SummaryWriter(tag='densenet121') as w:
     model = torchvision.models.densenet121()
-    w.add_graph(model, (dummy_input, ))
+    w.add_graph_torch(model, (dummy_input, ))
 
 with SummaryWriter(tag='resnet18') as w:
     model = torchvision.models.resnet18()
-    w.add_graph(model, (dummy_input, ))
+    w.add_graph_torch(model, (dummy_input, ))

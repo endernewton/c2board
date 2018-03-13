@@ -18,7 +18,7 @@ for n_iter in range(100):
     #                                          "xcosx":n_iter*np.cos(n_iter),
     #                                          "arctanx": np.arctan(n_iter)}, 
     #                                          n_iter)
-    x = torch.rand(32, 3, 64, 64) # output from network
+    # x = torch.rand(32, 3, 64, 64) # output from network
     if n_iter % 10 == 0:
         # x = vutils.make_grid(x, normalize=True, scale_each=True)   
         writer.add_image('Image', x, n_iter) # Tensor
@@ -26,8 +26,6 @@ for n_iter in range(100):
         writer.add_text('markdown Text', '''a|b\n-|-\nc|d''', n_iter)
         # for name, param in resnet18.named_parameters():
         #     writer.add_histogram(name, param, n_iter)
-        writer.add_pr_curve('xoxo', np.random.randint(2, size=100), np.random.rand(100), n_iter) #needs tensorboard 0.4RC or later
 
 # export scalar data to JSON for external processing
-# writer.export_scalars_to_json("./all_scalars.json")     
 writer.close()

@@ -12,13 +12,9 @@ from PIL import Image
 from six import StringIO
 from six.moves import range
 
-from c2board.src.summary_pb2 import Summary
-from c2board.src.summary_pb2 import HistogramProto
-from c2board.src.summary_pb2 import SummaryMetadata
+from c2board.src.summary_pb2 import Summary, HistogramProto, SummaryMetadata
 from c2board.src.tensor_pb2 import TensorProto
-from c2board.src.tensor_shape_pb2 import TensorShapeProto
-from c2board.src.plugin_pr_curve_pb2 import PrCurvePluginData
-from c2board.x2num import 
+from c2board.x2num import make_np
 
 _INVALID_TAG_CHARACTERS = _re.compile(r'[^-/\w\.]')
 
@@ -105,3 +101,4 @@ def text(tag, text):
                          string_val=[text.encode(encoding='utf_8')],
                          tensor_shape=TensorShapeProto(dim=[TensorShapeProto.Dim(size=1)]))
     return Summary(value=[Summary.Value(node_name=tag, metadata=smd, tensor=tensor)])
+
