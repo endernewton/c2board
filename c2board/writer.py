@@ -13,8 +13,7 @@ from c2board.src import graph_pb2
 from c2board.x2num import make_np
 
 from c2board.event_file_writer import EventFileWriter
-from c2board.graph_torch import graph_torch
-from c2board.graph import graph
+from c2board.graph import model_to_graph, nets_to_graph, protos_to_graph
 import c2board.summary as summary
 
 
@@ -144,8 +143,15 @@ class SummaryWriter(object):
                 json.dump(self.text_tags, fp)
 
     # X: graph is the last part
-    def add_graph(self, model):
-        self._file_writer.add_graph(graph(model))
+    def add_graph(self, model=None, nets=None, protos=None):
+        if not model and not nets and not protos:
+            raise ValueError("input must be either a model or a list of nets")
+        if model:
+            self._file_writer.add_graph(model_to_graph(model))
+        elif nets:
+            self._file_writer.add_graph(nets_to_graph(nets))
+        else:
+            self._file_writer.add_graph(protos_to_graph(protos))
 
     def add_audio(self, tag, snd_tensor, global_step=None, sample_rate=44100):
         raise NotImplementedError

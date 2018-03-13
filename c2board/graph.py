@@ -18,14 +18,15 @@ from c2board.src.versions_pb2 import VersionDef
 from c2board.src.attr_value_pb2 import AttrValue
 from c2board.src.tensor_shape_pb2 import TensorShapeProto
 
-def _try_get_shapes(nets):
-    try:
-        # Note: this will inspect the workspace for better or worse.
-        shapes, _ = workspace.InferShapesAndTypes(nets)
-        return shapes
-    except Exception as e:
-        print('WARNING: Failed to compute shapes: %s', e)
-        return {}
+# X: let's first go with a version without shapes
+# def _try_get_shapes(nets):
+#     try:
+#         # Note: this will inspect the workspace for better or worse.
+#         _ = workspace.InferShapesAndTypes(nets)
+#         return shapes
+#     except Exception as e:
+#         print('WARNING: Failed to compute shapes: %s', e)
+#         return {}
 
 # X: it seems not necessary to propagate it..
 def _propagate_device_option(net):
@@ -60,7 +61,7 @@ def _remap_keys(m, f):
     m.update(m2)
 
 # X: rename all the ops
-def _rename_all(shapes, track_blob_names, ops, f):
+def _rename_all(track_blob_names, ops, f):
     seen = set()
     renamed = {}
 
@@ -84,7 +85,6 @@ def _rename_all(shapes, track_blob_names, ops, f):
         op.input.extend(g(name) for name in inputs)
         op.output.extend(g(name) for name in outputs)
 
-    _remap_keys(shapes, g)
     if track_blob_names:
         _remap_keys(track_blob_names, g)
     # Rename all operator names (if any) independently so that the
@@ -94,32 +94,30 @@ def _rename_all(shapes, track_blob_names, ops, f):
     for op in ops:
         op.name = g(op.name)
 
-def _replace_colons(shapes, track_blob_names, ops, repl):
+def _replace_colons(track_blob_names, ops, repl):
     """
     `:i` has a special meaning in Tensorflow.
     """
     def f(name):
         return name.replace(':', repl)
-    _rename_all(shapes, track_blob_names, ops, f)
+    _rename_all(track_blob_names, ops, f)
 
-def _replace_underscores(shapes, track_blob_names, ops, repl):
+def _replace_underscores(track_blob_names, ops, repl):
     """
     `:i` has a special meaning in Tensorflow.
     """
     def f(name):
         return name.replace('_', repl)
-    _rename_all(shapes, track_blob_names, ops, f)
+    _rename_all(track_blob_names, ops, f)
 
-def _convert_to_ssa(shapes, track_blob_names, ops):
+def _convert_to_ssa(track_blob_names, ops):
     """
     Convert an operator graph to SSA (i.e. out-of-place).
-
     I.e. blobs will be renamed so that each blob is produced only once.
     """
     ir = core.IR(ops)
     seen = set()
     versioned = {}
-    shapes2 = {}
     new_track_blob_names = {}
 
     def ssa_name(name, versions):
@@ -133,9 +131,6 @@ def _convert_to_ssa(shapes, track_blob_names, ops):
         # Note: operator names (if any) will be handled later.
         new_name = _make_unique_name(seen, name, min_version=version)
         versioned[(name, version)] = new_name
-        # Transfer shape.
-        if name in shapes:
-            shapes2[new_name] = shapes[name]
         if track_blob_names and name in track_blob_names:
             new_track_blob_names[new_name] = track_blob_names[name]
         return new_name
@@ -149,13 +144,11 @@ def _convert_to_ssa(shapes, track_blob_names, ops):
         op.input.extend(ssa_name(name, ssa.in_versions) for name in inputs)
         op.output.extend(ssa_name(name, ssa.out_versions) for name in outputs)
 
-    shapes.clear()
-    shapes.update(shapes2)
     if track_blob_names:
         track_blob_names.clear()
         track_blob_names.update(new_track_blob_names)
 
-def _add_gradient_scope(shapes, track_blob_names, ops):
+def _add_gradient_scope(track_blob_names, ops):
     """
     For all operators or blobs with name containing "_grad", add a
     "GRADIENTS/" scope.
@@ -165,9 +158,9 @@ def _add_gradient_scope(shapes, track_blob_names, ops):
             return 'GRADIENTS/{}'.format(name.replace('_grad',''))
         else:
             return name
-    _rename_all(shapes, track_blob_names, ops, f)
+    _rename_all(track_blob_names, ops, f)
 
-def _add_momentum_scope(shapes, track_blob_names, ops):
+def _add_momentum_scope(track_blob_names, ops):
     """
     For all operators or blobs with name containing "_momentum", add a
     "MOMENTUM/" scope.
@@ -177,7 +170,7 @@ def _add_momentum_scope(shapes, track_blob_names, ops):
             return 'MOMENTUM/{}'.format(name.replace('_momentum',''))
         else:
             return name
-    _rename_all(shapes, track_blob_names, ops, f)
+    _rename_all(track_blob_names, ops, f)
 
 def _fill_missing_operator_names(ops):
     ''' Give missing operators a name.
@@ -196,11 +189,10 @@ def _fill_missing_operator_names(ops):
             name = op.name
         elif op.output or op.input:
             # X: a hack to get rid of the added stuff
-            l = [name.replace('GRADIENTS/','').replace('MOMENTUM/','') \
-                        for name in op.output or op.input]
+            l = [os.path.dirname(name) for name in op.output or op.input]
             # X: remove the trailing underscores and numbers,
             # which is an artifact of making the names unique
-            scope = os.path.commonprefix(l).rstrip('_1234567890')
+            scope = os.path.commonprefix(l)
             name = os.path.join(scope, op.type)
         else:
             name = op.type
@@ -256,24 +248,18 @@ def _set_tf_attr(m, arg):
     # The value is an empty list.
     m[k].list.s.extend([])
 
-def _operator_to_node(shapes, op):
+def _operator_to_node(op):
     assert op.name, op
     n = NodeDef()
     n.name = op.name
     n.input.extend(op.input)
     n.op = op.type
     n.device = _tf_device(op.device_option)
-    if shapes:
-        # Add shapes in order.
-        for output in op.output:
-            if output not in shapes:
-                break
-            _add_tf_shape(n.attr, shapes[output])
     for arg in op.arg:
         _set_tf_attr(n.attr, arg)
     return n
 
-def _blob_to_node(producing_ops, shapes, name):
+def _blob_to_node(producing_ops, name):
     assert name
     n = NodeDef()
     n.name = name
@@ -287,8 +273,6 @@ def _blob_to_node(producing_ops, shapes, name):
         device = inputs[0][0].device_option
         if (all(input[0].device_option == device for input in inputs)):
             n.device = _tf_device(device)
-    if shapes and name in shapes:
-        _add_tf_shape(n.attr, shapes[name])
     return n
 
 # X: remove the debug information, they are copious
@@ -298,8 +282,7 @@ def _clear_debug_info(ops):
             op.ClearField('debug_info')
 
 def _operators_to_graph_def(ops,
-                            shapes,
-                            replace_colons='$',
+                            replace_colons=None,
                             replace_underscores=None,
                             with_ssa=True,
                             with_gradient_scope=True,
@@ -311,42 +294,48 @@ def _operators_to_graph_def(ops,
         track_blob_names.clear()
         track_blob_names.update(_get_blob_names(ops))
     if replace_colons:
-        _replace_colons(shapes, track_blob_names, ops, replace_colons)
+        _replace_colons(track_blob_names, ops, replace_colons)
     if replace_underscores:
-        _replace_underscores(shapes, track_blob_names, ops, replace_underscores)
-    if with_ssa:
-        _convert_to_ssa(shapes, track_blob_names, ops)
+        _replace_underscores(track_blob_names, ops, replace_underscores)
     if with_gradient_scope:
-        _add_momentum_scope(shapes, track_blob_names, ops)
-        _add_gradient_scope(shapes, track_blob_names, ops)
+        _add_momentum_scope(track_blob_names, ops)
+        _add_gradient_scope(track_blob_names, ops)
+    # X: this is necessary since caffe can have in-place operator
+    if with_ssa:
+        _convert_to_ssa(track_blob_names, ops)
     _fill_missing_operator_names(ops)
 
+    # X: apparently the external inputs are missing
     # X: why producer is 22?
     current_graph = GraphDef(versions=VersionDef(producer=22))
+    # X: The next stages are just adding nodes
     producing_ops = {}
     blobs = set()
     for op in ops:
-        current_graph.node.extend([_operator_to_node(shapes, op)])
+        current_graph.node.extend([_operator_to_node(op)])
         for input_blob in op.input:
             blobs.add(input_blob)
         for i, output_blob in enumerate(op.output):
             blobs.add(output_blob)
+            # X: to record the op that produces the blob
             producing_ops.setdefault(output_blob, []).append((op, i))
     for blob in blobs:
-        current_graph.node.extend([_blob_to_node(producing_ops, shapes, blob)])
+        current_graph.node.extend([_blob_to_node(producing_ops, blob)])
     return current_graph
 
-def graph(model, shapes=None):
+def model_to_graph(model):
     # X: for some reason it needs to get the initialization operations as well 
     nets = [model.param_init_net, model.net]
-    if shapes is None:
-        shapes = _try_get_shapes(nets)
+    return nets_to_graph(nets)
+
+def nets_to_graph(nets):
     # X: get the network proto
     nets = [copy.deepcopy(net.Proto()) for net in nets]
-    # get the shapes
-    shapes = copy.deepcopy(shapes)
+    return protos_to_graph(nets)
+
+def protos_to_graph(nets):
     for net in nets:
         _propagate_device_option(net)
     ops = [op for net in nets for op in net.op]
-    current_graph = _operators_to_graph_def(ops, shapes)
+    current_graph = _operators_to_graph_def(ops)
     return current_graph
