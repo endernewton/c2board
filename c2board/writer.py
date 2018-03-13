@@ -14,6 +14,7 @@ from c2board.x2num import make_np
 
 from c2board.event_file_writer import EventFileWriter
 from c2board.graph_torch import graph_torch
+from c2board.graph import graph
 import c2board.summary as summary
 
 
@@ -144,7 +145,7 @@ class SummaryWriter(object):
 
     # X: graph is the last part
     def add_graph(self, model):
-        raise NotImplementedError
+        self._file_writer.add_graph(graph(model))
 
     def add_audio(self, tag, snd_tensor, global_step=None, sample_rate=44100):
         raise NotImplementedError

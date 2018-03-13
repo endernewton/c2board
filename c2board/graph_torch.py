@@ -1,11 +1,11 @@
 import torch
 from distutils.version import LooseVersion
 
-from .src.graph_pb2 import GraphDef
-from .src.node_def_pb2 import NodeDef
-from .src.versions_pb2 import VersionDef
-from .src.attr_value_pb2 import AttrValue
-from .src.tensor_shape_pb2 import TensorShapeProto
+from c2board.src.graph_pb2 import GraphDef
+from c2board.src.node_def_pb2 import NodeDef
+from c2board.src.versions_pb2 import VersionDef
+from c2board.src.attr_value_pb2 import AttrValue
+from c2board.src.tensor_shape_pb2 import TensorShapeProto
 
 
 def replace(name, scope):
@@ -54,6 +54,8 @@ def graph_torch(model, args, verbose=False):
         trace, _ = torch.jit.trace(model, args)
     torch.onnx._optimize_trace(trace)
     current_graph = trace.graph()
+    import pdb
+    pdb.set_trace()
     list_of_nodes = parse(current_graph)
     nodes = []
     for node in list_of_nodes:
@@ -62,5 +64,5 @@ def graph_torch(model, args, verbose=False):
                     op=node['op'], 
                     input=node['inputs'],
                     attr={'lanpa': AttrValue(s=node['attr'].encode(encoding='utf_8'))}))
-        
+
     return GraphDef(node=nodes, versions=VersionDef(producer=22))
