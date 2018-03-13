@@ -71,13 +71,14 @@ def _rename_all(shapes, track_blob_names, ops, f):
             return None
         if name in renamed:
             return renamed[name]
-        name2 = _make_unique_name(seen, f(name))
-        renamed[name] = name2
-        return name2
+        new_name = _make_unique_name(seen, f(name))
+        renamed[name] = new_name
+        return new_name
 
     for op in ops:
         inputs = list(op.input)
         outputs = list(op.output)
+        # X: remove all the inputs and outputs
         del op.input[:]
         del op.output[:]
         op.input.extend(g(name) for name in inputs)
@@ -101,6 +102,14 @@ def _replace_colons(shapes, track_blob_names, ops, repl):
         return name.replace(':', repl)
     _rename_all(shapes, track_blob_names, ops, f)
 
+def _replace_underscores(shapes, track_blob_names, ops, repl):
+    """
+    `:i` has a special meaning in Tensorflow.
+    """
+    def f(name):
+        return name.replace('_', repl)
+    _rename_all(shapes, track_blob_names, ops, f)
+
 def _convert_to_ssa(shapes, track_blob_names, ops):
     """
     Convert an operator graph to SSA (i.e. out-of-place).
@@ -111,25 +120,25 @@ def _convert_to_ssa(shapes, track_blob_names, ops):
     seen = set()
     versioned = {}
     shapes2 = {}
-    track_blob_names2 = {}
+    new_track_blob_names = {}
 
     def ssa_name(name, versions):
         assert name in versions
         version = versions[name]
         if (name, version) in versioned:
             return versioned[(name, version)]
-        # Always setting name2 = `{name}_{version}` would work, but we also try
+        # Always setting new_name = `{name}_{version}` would work, but we also try
         # to avoid a trailing `_0`, so we have to be careful not to introduce
         # name collisions, such as (foo_1, 0) = foo_1 = (foo, 1).
         # Note: operator names (if any) will be handled later.
-        name2 = _make_unique_name(seen, name, min_version=version)
-        versioned[(name, version)] = name2
+        new_name = _make_unique_name(seen, name, min_version=version)
+        versioned[(name, version)] = new_name
         # Transfer shape.
         if name in shapes:
-            shapes2[name2] = shapes[name]
+            shapes2[new_name] = shapes[name]
         if track_blob_names and name in track_blob_names:
-            track_blob_names2[name2] = track_blob_names[name]
-        return name2
+            new_track_blob_names[new_name] = track_blob_names[name]
+        return new_name
 
     for (op, ssa) in zip(ops, ir.ssa):
         assert op is ssa.op
@@ -144,19 +153,28 @@ def _convert_to_ssa(shapes, track_blob_names, ops):
     shapes.update(shapes2)
     if track_blob_names:
         track_blob_names.clear()
-        track_blob_names.update(track_blob_names2)
+        track_blob_names.update(new_track_blob_names)
 
 def _add_gradient_scope(shapes, track_blob_names, ops):
     """
     For all operators or blobs with name containing "_grad", add a
     "GRADIENTS/" scope.
-
-    Note: breaks graph execution since the blob -> gradient mapping is
-    hard coded.
     """
     def f(name):
         if '_grad' in name:
-            return 'GRADIENTS/{}'.format(name)
+            return 'GRADIENTS/{}'.format(name.replace('_grad',''))
+        else:
+            return name
+    _rename_all(shapes, track_blob_names, ops, f)
+
+def _add_momentum_scope(shapes, track_blob_names, ops):
+    """
+    For all operators or blobs with name containing "_momentum", add a
+    "MOMENTUM/" scope.
+    """
+    def f(name):
+        if '_momentum' in name:
+            return 'MOMENTUM/{}'.format(name.replace('_momentum',''))
         else:
             return name
     _rename_all(shapes, track_blob_names, ops, f)
@@ -177,8 +195,12 @@ def _fill_missing_operator_names(ops):
         if op.name:
             name = op.name
         elif op.output or op.input:
-            l = [os.path.dirname(name) for name in op.output or op.input]
-            scope = os.path.commonprefix(l)
+            # X: a hack to get rid of the added stuff
+            l = [name.replace('GRADIENTS/','').replace('MOMENTUM/','') \
+                        for name in op.output or op.input]
+            # X: remove the trailing underscores and numbers,
+            # which is an artifact of making the names unique
+            scope = os.path.commonprefix(l).rstrip('_1234567890')
             name = os.path.join(scope, op.type)
         else:
             name = op.type
@@ -269,20 +291,33 @@ def _blob_to_node(producing_ops, shapes, name):
         _add_tf_shape(n.attr, shapes[name])
     return n
 
+# X: remove the debug information, they are copious
+def _clear_debug_info(ops):
+    for op in ops:
+        if op.HasField('debug_info'):
+            op.ClearField('debug_info')
+
 def _operators_to_graph_def(ops,
                             shapes,
                             replace_colons='$',
+                            replace_underscores=None,
                             with_ssa=True,
                             with_gradient_scope=True,
-                            track_blob_names=None):
+                            track_blob_names=None,
+                            clear_debug_info=True):
+    if clear_debug_info:
+        _clear_debug_info(ops)
     if track_blob_names is not None:
         track_blob_names.clear()
         track_blob_names.update(_get_blob_names(ops))
     if replace_colons:
         _replace_colons(shapes, track_blob_names, ops, replace_colons)
+    if replace_underscores:
+        _replace_underscores(shapes, track_blob_names, ops, replace_underscores)
     if with_ssa:
         _convert_to_ssa(shapes, track_blob_names, ops)
     if with_gradient_scope:
+        _add_momentum_scope(shapes, track_blob_names, ops)
         _add_gradient_scope(shapes, track_blob_names, ops)
     _fill_missing_operator_names(ops)
 
