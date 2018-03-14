@@ -6,6 +6,7 @@ from __future__ import print_function
 from builtins import bytes
 import copy
 import os
+import re
 import six
 
 from caffe2.proto import caffe2_pb2
@@ -94,20 +95,24 @@ def _rename_all(track_blob_names, ops, f):
     for op in ops:
         op.name = g(op.name)
 
-def _replace_colons(track_blob_names, ops, repl):
+def _replace_colons(track_blob_names, ops):
     """
     `:i` has a special meaning in Tensorflow.
     """
     def f(name):
-        return name.replace(':', repl)
+        return name.replace(':', '$')
     _rename_all(track_blob_names, ops, f)
 
-def _replace_underscores(track_blob_names, ops, repl):
-    """
-    `:i` has a special meaning in Tensorflow.
-    """
+def _formalize_weights_and_biases(track_blob_names, ops):
+    # X: formalize weights and biases
+    WEIGHT = re.compile(r"(_w)$")
+    WEIGHT_ = re.compile(r"(_w_)")
+    BIAS = re.compile(r"(_b)$")
+    BIAS_ = re.compile(r"(_b_)")
     def f(name):
-        return name.replace('_', repl)
+        inter_name = WEIGHT_.sub('/weights_', WEIGHT.sub('/weights', name))
+        new_name = BIAS_.sub('/biases_', BIAS.sub('/biases', inter_name))
+        return new_name
     _rename_all(track_blob_names, ops, f)
 
 def _convert_to_ssa(track_blob_names, ops):
@@ -125,6 +130,7 @@ def _convert_to_ssa(track_blob_names, ops):
         version = versions[name]
         if (name, version) in versioned:
             return versioned[(name, version)]
+        # X: seems like the ambiguity is already handled
         # Always setting new_name = `{name}_{version}` would work, but we also try
         # to avoid a trailing `_0`, so we have to be careful not to introduce
         # name collisions, such as (foo_1, 0) = foo_1 = (foo, 1).
@@ -136,6 +142,7 @@ def _convert_to_ssa(track_blob_names, ops):
         return new_name
 
     for (op, ssa) in zip(ops, ir.ssa):
+        # X: somehow the magic is already done there
         assert op is ssa.op
         inputs = list(op.input)
         outputs = list(op.output)
@@ -172,33 +179,6 @@ def _add_momentum_scope(track_blob_names, ops):
             return name
     _rename_all(track_blob_names, ops, f)
 
-def _fill_missing_operator_names(ops):
-    ''' Give missing operators a name.
-
-    We expect C2 operators to be generally unnamed. This gives them a scope
-    (inferred from their outputs) and a name after their type. Duplicates will
-    be postfixed by an index.
-    '''
-    seen = set()
-    for op in ops:
-        # Make sure operator names don't collide with blobs.
-        seen.update(op.input)
-        seen.update(op.output)
-    for op in ops:
-        if op.name:
-            name = op.name
-        elif op.output or op.input:
-            # X: a hack to get rid of the added stuff
-            l = [os.path.dirname(name) for name in op.output or op.input]
-            # X: remove the trailing underscores and numbers,
-            # which is an artifact of making the names unique
-            scope = os.path.commonprefix(l)
-            name = os.path.join(scope, op.type)
-        else:
-            name = op.type
-        assert(name)
-        op.name = _make_unique_name(seen, name)
-
 def _tf_device(device_option):
     if not device_option.HasField("device_type"):
         return ""
@@ -216,7 +196,6 @@ def _add_tf_shape(m, ints):
         sh.dim.extend([dim])
     m['_output_shapes'].list.shape.extend([sh])
 
-
 def _set_tf_attr(m, arg):
     k = arg.name
     if k == 'shape' and arg.ints:
@@ -230,8 +209,7 @@ def _set_tf_attr(m, arg):
         return
     if arg.HasField("s"):
         m[k].s = (
-            arg.s if isinstance(arg.s, bytes) else str(arg.s).encode('utf-8')
-        )
+            arg.s if isinstance(arg.s, bytes) else str(arg.s).encode('utf-8'))
         return
     if arg.floats:
         m[k].list.f.extend(arg.floats)
@@ -242,37 +220,35 @@ def _set_tf_attr(m, arg):
     if arg.strings:
         m[k].list.s.extend(
             s if isinstance(s, bytes) else str(s).encode('utf-8')
-            for s in arg.strings
-        )
+            for s in arg.strings)
         return
     # The value is an empty list.
     m[k].list.s.extend([])
 
-def _operator_to_node(op):
-    assert op.name, op
-    n = NodeDef()
-    n.name = op.name
-    n.input.extend(op.input)
-    n.op = op.type
-    n.device = _tf_device(op.device_option)
-    for arg in op.arg:
-        _set_tf_attr(n.attr, arg)
-    return n
+def _operator_to_node(op, inter_blobs):
+    # X: no need to assert op name
+    assert op
+    nodes = []
+    for output in op.output:
+        # These blobs we do not care
+        if output in inter_blobs:
+            continue
+        n = NodeDef()
+        n.name = output
+        n.input.extend(op.input)
+        # X: does include op as the type
+        n.op = op.type
+        n.device = _tf_device(op.device_option)
+        for arg in op.arg:
+            _set_tf_attr(n.attr, arg)
+        nodes.append(n)
+    return nodes
 
-def _blob_to_node(producing_ops, name):
+def _input_blob_to_node(name):
     assert name
     n = NodeDef()
     n.name = name
-    inputs = producing_ops.get(name, [])
-    if inputs:
-        n.op = 'Blob'
-    else:
-        n.op = 'Placeholder'
-    n.input.extend('%s:%d' % (op.name, i) for op, i in inputs)
-    if inputs:
-        device = inputs[0][0].device_option
-        if (all(input[0].device_option == device for input in inputs)):
-            n.device = _tf_device(device)
+    n.op = 'Placeholder'
     return n
 
 # X: remove the debug information, they are copious
@@ -281,46 +257,59 @@ def _clear_debug_info(ops):
         if op.HasField('debug_info'):
             op.ClearField('debug_info')
 
+# X: compute the input and output blobs
+def _compute_in_out(ops):
+    in_blobs = set()
+    out_blobs = set()
+
+    for op in ops:
+        for input_blob in op.input:
+            in_blobs.add(input_blob)
+        for output_blob in op.output:
+            out_blobs.add(output_blob)
+
+    input_blobs = list(in_blobs.difference(out_blobs))
+    output_blobs = list(out_blobs.difference(in_blobs))
+    inter_blobs = { b:1 for b in output_blobs if b.startswith('_')}
+    # X: now reset the actual output
+    output_blobs = [ b for b in output_blobs if b not in inter_blobs]
+
+    return input_blobs, inter_blobs, output_blobs
+
+# ops are necessary
 def _operators_to_graph_def(ops,
-                            replace_colons=None,
-                            replace_underscores=None,
-                            with_ssa=True,
                             with_gradient_scope=True,
                             track_blob_names=None,
                             clear_debug_info=True):
     if clear_debug_info:
         _clear_debug_info(ops)
+    # X: this is to track how the blob names are changed
+    # X: each key is the final name, and each value is the original name
     if track_blob_names is not None:
         track_blob_names.clear()
         track_blob_names.update(_get_blob_names(ops))
-    if replace_colons:
-        _replace_colons(track_blob_names, ops, replace_colons)
-    if replace_underscores:
-        _replace_underscores(track_blob_names, ops, replace_underscores)
+    # X: this is necessary since caffe can have in-place operator
+    _convert_to_ssa(track_blob_names, ops)
+    # X: first replace weights and biases, so they look similar
+    _formalize_weights_and_biases(track_blob_names, ops)
+    # X: this is to necessary
+    _replace_colons(track_blob_names, ops)
+    # X: special handles for gradients related
     if with_gradient_scope:
         _add_momentum_scope(track_blob_names, ops)
         _add_gradient_scope(track_blob_names, ops)
-    # X: this is necessary since caffe can have in-place operator
-    if with_ssa:
-        _convert_to_ssa(track_blob_names, ops)
-    _fill_missing_operator_names(ops)
+
+    input_blobs, inter_blobs, _ = _compute_in_out(ops)
 
     # X: apparently the external inputs are missing
-    # X: why producer is 22?
     current_graph = GraphDef(versions=VersionDef(producer=22))
-    # X: The next stages are just adding nodes
-    producing_ops = {}
-    blobs = set()
+    # X: update nodes with the external inputs
+    for blob in input_blobs:
+        current_graph.node.extend([_input_blob_to_node(blob)])
+    # X: update nodes with other nodes
     for op in ops:
-        current_graph.node.extend([_operator_to_node(op)])
-        for input_blob in op.input:
-            blobs.add(input_blob)
-        for i, output_blob in enumerate(op.output):
-            blobs.add(output_blob)
-            # X: to record the op that produces the blob
-            producing_ops.setdefault(output_blob, []).append((op, i))
-    for blob in blobs:
-        current_graph.node.extend([_blob_to_node(producing_ops, blob)])
+        current_graph.node.extend(_operator_to_node(op, inter_blobs))
+
     return current_graph
 
 def model_to_graph(model):
@@ -337,5 +326,6 @@ def protos_to_graph(nets):
     for net in nets:
         _propagate_device_option(net)
     ops = [op for net in nets for op in net.op]
+    # X: ignore the output there, should be inferred
     current_graph = _operators_to_graph_def(ops)
     return current_graph
