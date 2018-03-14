@@ -156,27 +156,14 @@ def _convert_to_ssa(track_blob_names, ops):
         track_blob_names.update(new_track_blob_names)
 
 def _add_gradient_scope(track_blob_names, ops):
-    """
-    For all operators or blobs with name containing "_grad", add a
-    "GRADIENTS/" scope.
-    """
+    """Separate out gradient and momentum for names."""
     def f(name):
+        new_name = name
         if '_grad' in name:
-            return 'GRADIENTS/{}'.format(name.replace('_grad',''))
-        else:
-            return name
-    _rename_all(track_blob_names, ops, f)
-
-def _add_momentum_scope(track_blob_names, ops):
-    """
-    For all operators or blobs with name containing "_momentum", add a
-    "MOMENTUM/" scope.
-    """
-    def f(name):
+            new_name = 'Gradients/{}'.format(new_name.replace('_grad',''))
         if '_momentum' in name:
-            return 'MOMENTUM/{}'.format(name.replace('_momentum',''))
-        else:
-            return name
+            new_name = 'Momentum/{}'.format(new_name.replace('_momentum',''))
+        return new_name
     _rename_all(track_blob_names, ops, f)
 
 def _tf_device(device_option):
@@ -201,12 +188,15 @@ def _set_tf_attr(m, arg):
     if k == 'shape' and arg.ints:
         _add_tf_shape(m, arg.ints)
         return
+    # float
     if arg.HasField("f"):
         m[k].f = arg.f
         return
+    # integer
     if arg.HasField("i"):
         m[k].i = arg.i
         return
+    # string
     if arg.HasField("s"):
         m[k].s = (
             arg.s if isinstance(arg.s, bytes) else str(arg.s).encode('utf-8'))
@@ -230,7 +220,7 @@ def _operator_to_node(op, inter_blobs):
     assert op
     nodes = []
     for output in op.output:
-        # These blobs we do not care
+        # X: These blobs we do not care
         if output in inter_blobs:
             continue
         n = NodeDef()
@@ -296,7 +286,6 @@ def _operators_to_graph_def(ops,
     _replace_colons(track_blob_names, ops)
     # X: special handles for gradients related
     if with_gradient_scope:
-        _add_momentum_scope(track_blob_names, ops)
         _add_gradient_scope(track_blob_names, ops)
 
     input_blobs, inter_blobs, _ = _compute_in_out(ops)
