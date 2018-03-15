@@ -143,45 +143,21 @@ class SummaryWriter(object):
                 json.dump(self.text_tags, fp)
 
     # X: graph is the last part
-    def add_graph(self, model=None, nets=None, protos=None):
+    def add_graph(self, model=None, nets=None, protos=None, **kwargs):
         if not model and not nets and not protos:
             raise ValueError("input must be either a model or a list of nets")
         if model:
-            self._file_writer.add_graph(model_to_graph(model))
+            self._file_writer.add_graph(model_to_graph(model, **kwargs))
         elif nets:
-            self._file_writer.add_graph(nets_to_graph(nets))
+            self._file_writer.add_graph(nets_to_graph(nets, **kwargs))
         else:
-            self._file_writer.add_graph(protos_to_graph(protos))
+            self._file_writer.add_graph(protos_to_graph(protos, **kwargs))
 
     def add_audio(self, tag, snd_tensor, global_step=None, sample_rate=44100):
         raise NotImplementedError
 
     def add_pr_curve(self, tag, labels, predictions, global_step=None, num_thresholds=127, weights=None):
         raise NotImplementedError
-
-    def add_graph_torch(self, model, input_to_model, verbose=False):
-        # prohibit second call?
-        # no, let tensorboard handles it and show its warning message.
-        """Add graph data to summary.
-
-        Args:
-            model (torch.nn.Module): model to draw.
-            input_to_model (torch.autograd.Variable): a variable or a tuple of variables to be fed.
-
-        """
-        import torch
-        from distutils.version import LooseVersion
-        # X: interesting, loose version can be used to compare versions
-        if LooseVersion(torch.__version__) >= LooseVersion("0.3.1"):
-            pass
-        else:
-            if LooseVersion(torch.__version__) >= LooseVersion("0.3.0"):
-                print('You are using PyTorch==0.3.0, use add_graph_onnx()')
-                return
-            if not hasattr(torch.autograd.Variable, 'grad_fn'):
-                print('add_graph() only supports PyTorch v0.2.')
-                return
-        self._file_writer.add_graph(graph_torch(model, input_to_model, verbose))
 
     def close(self):
         if not self._file_writer._closed:

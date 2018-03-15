@@ -103,15 +103,25 @@ def _replace_colons(track_blob_names, ops):
         return name.replace(':', '$')
     _rename_all(track_blob_names, ops, f)
 
-def _formalize_weights_and_biases(track_blob_names, ops):
+def _formalize_for_tensorflow(track_blob_names, ops):
     # X: formalize weights and biases
     WEIGHT = re.compile(r"(_w)$")
     WEIGHT_ = re.compile(r"(_w_)")
+    BN_SCALE = re.compile(r"(_bn_s)$")
+    BN_SCALE_ = re.compile(r"(_bn_s_)")
+    BN_BIAS = re.compile(r"(_bn_b)$")
+    BN_BIAS_ = re.compile(r"(_bn_b_)")
     BIAS = re.compile(r"(_b)$")
     BIAS_ = re.compile(r"(_b_)")
+    BRANCH = re.compile(r"(_branch)")
     def f(name):
-        inter_name = WEIGHT_.sub('/weights_', WEIGHT.sub('/weights', name))
-        new_name = BIAS_.sub('/biases_', BIAS.sub('/biases', inter_name))
+        inter_name = WEIGHT_.sub('/weight_', WEIGHT.sub('/weight', name))
+        inter_name = BN_SCALE_.sub('/batchnorm/scale_', 
+                                BN_SCALE.sub('/batchnorm/scale', inter_name))
+        inter_name = BN_BIAS_.sub('/batchnorm/bias_', 
+                                BN_BIAS.sub('/batchnorm/bias', inter_name))
+        inter_name = BIAS_.sub('/bias_', BIAS.sub('/bias', inter_name))
+        new_name = BRANCH.sub('/branch', inter_name)
         return new_name
     _rename_all(track_blob_names, ops, f)
 
@@ -215,16 +225,17 @@ def _set_tf_attr(m, arg):
     # The value is an empty list.
     m[k].list.s.extend([])
 
-def _operator_to_node(op, inter_blobs):
+def _operator_to_node(op, inter_blobs, seen):
     # X: no need to assert op name
     assert op
     nodes = []
-    for output in op.output:
-        # X: These blobs we do not care
-        if output in inter_blobs:
-            continue
+    outputs = [o for o in op.output if o not in inter_blobs]
+    seen.update(outputs)
+    len_outputs = len(outputs)
+    if len_outputs == 1:
         n = NodeDef()
-        n.name = output
+        n.name = outputs[0]
+        # X: we are sure the name is unique
         n.input.extend(op.input)
         # X: does include op as the type
         n.op = op.type
@@ -232,6 +243,37 @@ def _operator_to_node(op, inter_blobs):
         for arg in op.arg:
             _set_tf_attr(n.attr, arg)
         nodes.append(n)
+    elif len_outputs > 1:
+        # X: create a name that is likely unique
+        if op.name:
+            name = op.name
+        else:
+            l = [name for name in outputs]
+            scope = os.path.commonprefix(l)
+            name = os.path.join(scope, op.type)
+        assert(name)
+        op.name = _make_unique_name(seen, name)
+        device = _tf_device(op.device_option)
+        # X: create additional output nodes
+        for output in outputs:
+            n = NodeDef()
+            n.name = output
+            n.input.extend([op.name])
+            n.op = 'Blob'
+            n.device = device
+            nodes.append(n)
+
+        # X: nodes for the current op
+        n = NodeDef()
+        n.name = op.name
+        n.input.extend(op.input)
+        # X: does include op as the type
+        n.op = op.type
+        n.device = device
+        for arg in op.arg:
+            _set_tf_attr(n.attr, arg)
+        nodes.append(n)
+    # for other cases it does not matter
     return nodes
 
 def _input_blob_to_node(name):
@@ -246,6 +288,47 @@ def _clear_debug_info(ops):
     for op in ops:
         if op.HasField('debug_info'):
             op.ClearField('debug_info')
+
+def _get_gpu_zero(ops):
+    # X: check if it starts with gpu zero
+    def f(op):
+        output = str(op.output[0])
+        if output.startswith('gpu_0/'):
+            return True
+        return False
+    new_ops = [op for op in ops if f(op)]
+    # since the scope is fixed, it is useless now
+    GPU0 = re.compile(r"^(gpu_0/)")
+    def g(name):
+        new_name = GPU0.sub('', name)
+        return new_name
+    _rename_all(None, new_ops, g)
+    return new_ops
+
+def _remove_unwanted(ops):
+    # remove unwanted things
+    def f(blob):
+        flag = True
+        flag &= blob.find('__m') < 0
+        flag &= not blob.startswith('_gpu')
+        return flag
+
+    new_ops = []
+    for op in ops:
+        inputs = list(op.input)
+        outputs = list(op.output)
+        # X: remove all the inputs and outputs
+        del op.input[:]
+        del op.output[:]
+        new_inputs = [i for i in inputs if f(i)]
+        new_outputs = [o for o in outputs if f(o)]
+        # X: only add the op if output is not empty
+        if new_outputs:
+            op.input.extend(new_inputs)
+            op.output.extend(new_outputs)
+            new_ops.append(op)
+
+    return new_ops
 
 # X: compute the input and output blobs
 def _compute_in_out(ops):
@@ -268,11 +351,19 @@ def _compute_in_out(ops):
 
 # ops are necessary
 def _operators_to_graph_def(ops,
+                            clear_debug_info=True,
+                            single_gpu=False,
+                            remove_m=True,
                             with_gradient_scope=True,
-                            track_blob_names=None,
-                            clear_debug_info=True):
+                            track_blob_names=None):
     if clear_debug_info:
         _clear_debug_info(ops)
+    # X: if the architecture is crated by some 
+    if single_gpu:
+        ops = _get_gpu_zero(ops)
+    if remove_m:
+        # X: for now we will still keep the inputs from other gpus
+        ops = _remove_unwanted(ops)
     # X: this is to track how the blob names are changed
     # X: each key is the final name, and each value is the original name
     if track_blob_names is not None:
@@ -281,7 +372,7 @@ def _operators_to_graph_def(ops,
     # X: this is necessary since caffe can have in-place operator
     _convert_to_ssa(track_blob_names, ops)
     # X: first replace weights and biases, so they look similar
-    _formalize_weights_and_biases(track_blob_names, ops)
+    _formalize_for_tensorflow(track_blob_names, ops)
     # X: this is to necessary
     _replace_colons(track_blob_names, ops)
     # X: special handles for gradients related
@@ -289,32 +380,32 @@ def _operators_to_graph_def(ops,
         _add_gradient_scope(track_blob_names, ops)
 
     input_blobs, inter_blobs, _ = _compute_in_out(ops)
-
     # X: apparently the external inputs are missing
     current_graph = GraphDef(versions=VersionDef(producer=22))
     # X: update nodes with the external inputs
+    seen = set(input_blobs)
     for blob in input_blobs:
         current_graph.node.extend([_input_blob_to_node(blob)])
     # X: update nodes with other nodes
     for op in ops:
-        current_graph.node.extend(_operator_to_node(op, inter_blobs))
+        current_graph.node.extend(_operator_to_node(op, inter_blobs, seen))
 
     return current_graph
 
-def model_to_graph(model):
+def model_to_graph(model, **kwargs):
     # X: for some reason it needs to get the initialization operations as well 
     nets = [model.param_init_net, model.net]
-    return nets_to_graph(nets)
+    return nets_to_graph(nets, **kwargs)
 
-def nets_to_graph(nets):
+def nets_to_graph(nets, **kwargs):
     # X: get the network proto
     nets = [copy.deepcopy(net.Proto()) for net in nets]
-    return protos_to_graph(nets)
+    return protos_to_graph(nets, **kwargs)
 
-def protos_to_graph(nets):
+def protos_to_graph(nets, **kwargs):
     for net in nets:
         _propagate_device_option(net)
     ops = [op for net in nets for op in net.op]
     # X: ignore the output there, should be inferred
-    current_graph = _operators_to_graph_def(ops)
+    current_graph = _operators_to_graph_def(ops, **kwargs)
     return current_graph
