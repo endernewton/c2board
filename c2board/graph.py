@@ -107,20 +107,22 @@ def _formalize_for_tensorflow(track_blob_names, ops):
     # X: formalize weights and biases
     WEIGHT = re.compile(r"(_w)$")
     WEIGHT_ = re.compile(r"(_w_)")
-    BN_SCALE = re.compile(r"(_bn_s)$")
-    BN_SCALE_ = re.compile(r"(_bn_s_)")
-    BN_BIAS = re.compile(r"(_bn_b)$")
-    BN_BIAS_ = re.compile(r"(_bn_b_)")
+    BN = re.compile(r"(_bn)$")
+    BN_ = re.compile(r"(_bn_)")
     BIAS = re.compile(r"(_b)$")
     BIAS_ = re.compile(r"(_b_)")
+    SCALE = re.compile(r"(_s)$")
+    SCALE_ = re.compile(r"(_s_)")
+    SUM = re.compile(r"(_sum)$")
+    SUM_ = re.compile(r"(_sum_)")
     BRANCH = re.compile(r"(_branch)")
     def f(name):
         inter_name = WEIGHT_.sub('/weight_', WEIGHT.sub('/weight', name))
-        inter_name = BN_SCALE_.sub('/batchnorm/scale_', 
-                                BN_SCALE.sub('/batchnorm/scale', inter_name))
-        inter_name = BN_BIAS_.sub('/batchnorm/bias_', 
-                                BN_BIAS.sub('/batchnorm/bias', inter_name))
+        inter_name = BN_.sub('/batchnorm_', 
+                                BN.sub('/batchnorm', inter_name))
         inter_name = BIAS_.sub('/bias_', BIAS.sub('/bias', inter_name))
+        inter_name = SCALE_.sub('/scale_', SCALE.sub('/scale', inter_name))
+        inter_name = SUM_.sub('/sum_', SUM.sub('/sum', inter_name))
         new_name = BRANCH.sub('/branch', inter_name)
         return new_name
     _rename_all(track_blob_names, ops, f)
@@ -353,20 +355,21 @@ def _compute_in_out(ops):
 def _operators_to_graph_def(ops,
                             clear_debug_info=True,
                             single_gpu=False,
-                            remove_m=True,
+                            remove_unwanted=True,
                             with_gradient_scope=True,
+                            custom_rename=None,
                             track_blob_names=None):
     if clear_debug_info:
         _clear_debug_info(ops)
     # X: if the architecture is crated by some 
     if single_gpu:
         ops = _get_gpu_zero(ops)
-    if remove_m:
+    if remove_unwanted:
         # X: for now we will still keep the inputs from other gpus
         ops = _remove_unwanted(ops)
     # X: this is to track how the blob names are changed
     # X: each key is the final name, and each value is the original name
-    if track_blob_names is not None:
+    if track_blob_names:
         track_blob_names.clear()
         track_blob_names.update(_get_blob_names(ops))
     # X: this is necessary since caffe can have in-place operator
@@ -378,6 +381,9 @@ def _operators_to_graph_def(ops,
     # X: special handles for gradients related
     if with_gradient_scope:
         _add_gradient_scope(track_blob_names, ops)
+    # X: allow an extra function to rename and customize
+    if custom_rename:
+        _rename_all(track_blob_names, ops, custom_rename)
 
     input_blobs, inter_blobs, _ = _compute_in_out(ops)
     # X: apparently the external inputs are missing
