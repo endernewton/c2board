@@ -9,10 +9,7 @@ def make_np(x, modality=None):
     # if already numpy, return
     if isinstance(x, np.ndarray):
         return x
-    # X: just get the scalar value back
-    if np.isscalar(x):
-        return np.array([x])
-    assert isinstance(x, str), 'ERROR: should pass name of the blob here'
+    assert isinstance(x, unicode), 'ERROR: should pass name of the blob here'
     # X: everything else, just fetch the blob given the name
     return caffe2_num(x, modality)
 

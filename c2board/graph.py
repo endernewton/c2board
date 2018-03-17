@@ -19,15 +19,6 @@ from c2board.src.versions_pb2 import VersionDef
 from c2board.src.attr_value_pb2 import AttrValue
 from c2board.src.tensor_shape_pb2 import TensorShapeProto
 
-# X: let's first go with a version without shapes
-# def _try_get_shapes(nets):
-#     try:
-#         # Note: this will inspect the workspace for better or worse.
-#         _ = workspace.InferShapesAndTypes(nets)
-#         return shapes
-#     except Exception as e:
-#         print('WARNING: Failed to compute shapes: %s', e)
-#         return {}
 
 # X: it seems not necessary to propagate it..
 def _propagate_device_option(net):
