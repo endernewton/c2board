@@ -66,7 +66,7 @@ class FileWriter(object):
 # X: the biggest class to handle events
 class SummaryWriter(object):
     """Writes `Summary` directly to event files."""
-    def __init__(self, log_dir=None, tag='default',bins='auto'):
+    def __init__(self, log_dir=None, tag='default',bins=100):
         if not log_dir:
             # X: just create a name for the log files
             log_dir = os.path.join('runs', tag)
@@ -129,10 +129,13 @@ class SummaryWriter(object):
             self.replace_names(self.image_dict)
 
     def add_scalar(self, tag, scalar_value, global_step):
-        """Add scalar data to summary.
-        """
+        """Add scalar data to summary."""
         self._file_writer.add_summary(summary.scalar(tag, scalar_value), 
                                     global_step)
+
+    def write_scalars(self, dictionary, global_step):
+        for key, value in six.iteritems(dictionary):
+            self.add_scalar(key, value, global_step)
 
     def add_histogram(self, tag, values, global_step):
         """Add histogram to summary."""
@@ -144,7 +147,6 @@ class SummaryWriter(object):
         self._file_writer.add_summary(summary.image(tag, img_tensor), 
                                     global_step)
 
-    # X: add text
     def add_text(self, tag, text_string, global_step):
         """Add text data to summary."""
         self._file_writer.add_summary(summary.text(tag, text_string), global_step)

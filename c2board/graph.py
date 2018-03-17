@@ -347,7 +347,6 @@ def _operators_to_graph_def(ops,
                             clear_debug_info=True,
                             single_gpu=False,
                             remove_unwanted=True,
-                            with_gradient_scope=True,
                             custom_rename=None):
     # X: this is to track how the blob names are changed
     # X: each key is the final name, and each value is the original name
@@ -372,8 +371,7 @@ def _operators_to_graph_def(ops,
     if custom_rename:
         _rename_all(track_blob_names, ops, custom_rename)
     # X: special handles for gradients related
-    if with_gradient_scope:
-        _add_gradient_scope(track_blob_names, ops)
+    _add_gradient_scope(track_blob_names, ops)
 
     input_blobs, inter_blobs, _ = _compute_in_out(ops)
     # X: apparently the external inputs are missing

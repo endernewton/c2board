@@ -42,7 +42,6 @@ def histogram(name, values, bins):
     hist = make_histogram(values.astype(np.float32, copy=False), bins)
     return Summary(value=[Summary.Value(tag=name, histo=hist)])
 
-
 def make_histogram(values, bins):
     """Convert values into a histogram proto using logic from histogram.cc."""
     values = values.reshape(-1)
@@ -81,7 +80,6 @@ def make_image(tensor):
                          width=width,
                          colorspace=channel,
                          encoded_image_string=image_string)
-
 
 def audio(tag, tensor, sample_rate=44100):
     raise NotImplementedError
