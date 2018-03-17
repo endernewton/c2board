@@ -5,6 +5,8 @@ from __future__ import print_function
 
 import json
 import os
+import re
+import six
 import time
 
 from c2board.src import event_pb2
@@ -80,55 +82,80 @@ class SummaryWriter(object):
         self.default_bins = neg_buckets[::-1] + [0] + buckets
         self.text_tags = []
         self.scalar_dict = {}
+        self.histogram_dict = {}
+        self.image_dict = {}
         self.text_dir = None
+        self._track_blob_names = {}
+        self._reversed_block_names = {}
 
-    def __append_to_scalar_dict(self, 
-                                tag, 
-                                scalar_value, 
-                                global_step,
-                                timestamp):
-        """This adds an entry to the self.scalar_dict data structure with format
-        {writer_id : [[timestamp, step, value], ...], ...}.
-        """
-        # X: it seems like it will just create a dictionary for each scalar
-        if tag not in self.scalar_dict.keys():
-            self.scalar_dict[tag] = []
-        self.scalar_dict[tag].append([timestamp, 
-                                    global_step, 
-                                    float(scalar_value)])
+    def append_scalar(self, name):
+        self.scalar_dict[name] = []
 
-    def add_scalar(self, tag, scalar_value, global_step=None):
+    # X: this is done during the construction of the graph, so just append
+    def append_histogram(self, name):
+        # X: later it can be mapped to many names
+        self.histogram_dict[name] = name
+
+    def append_image(self, name):
+        self.image_dict[name] = name
+
+    def reverse_map(self):
+        for key, value in six.iteritems(self._track_blob_names):
+            if value in self._reversed_block_names:
+                self._reversed_block_names[value].append(key)
+            else:
+                self._reversed_block_names[value] = [key]
+
+    # X: first need to check we do not double dump the blobs
+    def check_names(self):
+        assert len(self.histogram_dict) == len(set(self.histogram_dict)), \
+                "ERROR: duplicate name to account histograms"
+        assert len(self.image_dict) == len(set(self.image_dict)), \
+                "ERROR: duplicate name to account images"
+
+    def replace_names(self, dictionary):
+        GPU = re.compile('gpu_[0-9]+/')
+
+        for key in dictionary.keys():
+            # X: remove GPU information, assume it is data parallelism
+            # TODO: make it applicable to everything
+            match = GPU.match(key).group()
+            key0 = key.replace(match, 'gpu_0/')
+            assert key0 in self._reversed_block_names, \
+                             "ERROR: {} not found in blob names!".format(key0)
+            values = self._reversed_block_names[key0]
+            # X: hack, just get the common ones
+            value = summary.clean_tag(match + os.path.commonprefix(values))
+            dictionary[key] = value
+
+    def sort_out_names(self):
+        if self._track_blob_names:
+            if not self._reversed_block_names:
+                self.reverse_map()
+
+            self.replace_names(self.histogram_dict)
+            self.replace_names(self.image_dict)
+
+    def add_scalar(self, tag, scalar_value, global_step):
         """Add scalar data to summary.
         """
         self._file_writer.add_summary(summary.scalar(tag, scalar_value), 
                                     global_step)
-        self.__append_to_scalar_dict(tag, 
-                                    scalar_value, 
-                                    global_step, 
-                                    time.time())
 
-    def export_scalars_to_json(self, path):
-        """Exports to the given path an ASCII file containing all the scalars
-        written so far by this instance, with the following format:
-        {writer_id : [[timestamp, step, value], ...], ...}
-        """
-        with open(path, "w") as f:
-            json.dump(self.scalar_dict, f)
-
-    def add_histogram(self, tag, values, global_step=None, bins='tensorflow'):
+    def add_histogram(self, tag, values, global_step, bins='tensorflow'):
         """Add histogram to summary."""
         if bins == 'tensorflow':
             bins = self.default_bins
         self._file_writer.add_summary(summary.histogram(tag, values, bins), 
                                     global_step)
 
-    def add_image(self, tag, img_tensor, global_step=None):
+    def add_image(self, tag, img_tensor, global_step):
         """Add image data to summary."""
         self._file_writer.add_summary(summary.image(tag, img_tensor), 
                                     global_step)
 
     # X: add text
-    def add_text(self, tag, text_string, global_step=None):
+    def add_text(self, tag, text_string, global_step):
         """Add text data to summary."""
         self._file_writer.add_summary(summary.text(tag, text_string), global_step)
         # X: seems like all the text tags are added to a json file
@@ -136,8 +163,8 @@ class SummaryWriter(object):
             self.text_tags.append(tag)
             if not self.text_dir:
                 text_dir =os.path.join(self._file_writer.get_logdir(),
-                                        'plugins',
-                                        'tensorboard_text')
+                                                    'plugins',
+                                                    'tensorboard_text')
                 os.makedirs(text_dir)
             with open(os.path.join(text_dir, 'tensors.json'), 'w') as fp:
                 json.dump(self.text_tags, fp)
@@ -147,17 +174,32 @@ class SummaryWriter(object):
         if not model and not nets and not protos:
             raise ValueError("input must be either a model or a list of nets")
         if model:
-            self._file_writer.add_graph(model_to_graph(model, **kwargs))
+            current_graph, track_blob_names = model_to_graph(model, **kwargs)
         elif nets:
-            self._file_writer.add_graph(nets_to_graph(nets, **kwargs))
+            current_graph, track_blob_names = nets_to_graph(nets, **kwargs)
         else:
-            self._file_writer.add_graph(protos_to_graph(protos, **kwargs))
+            current_graph, track_blob_names = protos_to_graph(protos, **kwargs)
+        self._file_writer.add_graph(current_graph)
+        self._track_blob_names = track_blob_names
+        # X: once the graph is built, one can just map the blobs
+        self.check_names()
+        self.sort_out_names()
 
     def add_audio(self, tag, snd_tensor, global_step=None, sample_rate=44100):
         raise NotImplementedError
 
-    def add_pr_curve(self, tag, labels, predictions, global_step=None, num_thresholds=127, weights=None):
+    def add_pr_curve(self, tag, labels, predictions, 
+                    global_step=None, 
+                    num_thresholds=127, 
+                    weights=None):
         raise NotImplementedError
+
+    # X: the function to call to dump the values
+    def write_summaries(self, global_step):
+        for key, value in six.iteritems(self.histogram_dict):
+            self.add_histogram(value, key, global_step)
+        for key, value in six.iteritems(self.image_dict):
+            self.add_image(value, key, global_step)
 
     def close(self):
         if not self._file_writer._closed:

@@ -3,7 +3,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
 import os
 import six
 import socket
@@ -36,9 +35,6 @@ class EventsWriter(object):
         self._path = file_prefix + ".out.tfevents." + \
                             str(time.time())[:10] + \
                             "." + socket.gethostname()
-
-        # Open(Create) the log file with the particular form of name.
-        logging.basicConfig(filename=self._path)
 
         self._num_outstanding_events = 0
 

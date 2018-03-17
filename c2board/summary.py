@@ -5,7 +5,6 @@ from __future__ import print_function
 
 import bisect
 import io
-import logging
 import numpy as np
 import re as _re
 from PIL import Image
@@ -19,19 +18,18 @@ from c2board.x2num import make_np
 _INVALID_TAG_CHARACTERS = _re.compile(r'[^-/\w\.]')
 
 # X: some basic function
-def _clean_tag(name):
+def clean_tag(name):
     if name is not None:
         new_name = _INVALID_TAG_CHARACTERS.sub('_', name)
         new_name = new_name.lstrip('/')  # Remove leading slashes
         if new_name != name:
-            logging.info('Summary name %s is illegal; using %s instead.' % (name, new_name))
+            print('Summary name %s is illegal; using %s instead.' % (name, new_name))
             name = new_name
     return name
 
 # X: this is to get the scalar out and 
 def scalar(name, scalar, collections=None):
     """Assume for the scalar values are NOT needed to fetch."""
-    name = _clean_tag(name)
     assert np.isscalar(scalar), 'ERROR: scalar values are not to be fetched'
     scalar = np.float32(scalar)
     return Summary(value=[Summary.Value(tag=name, simple_value=scalar)])
@@ -39,7 +37,6 @@ def scalar(name, scalar, collections=None):
 # X: for histogram
 def histogram(name, values, bins, collections=None):
     """Outputs a `Summary` protocol buffer with a histogram."""
-    name = _clean_tag(name)
     # retrieve values 
     values = make_np(values)
     hist = make_histogram(values.astype(np.float32, copy=False), bins)
@@ -66,7 +63,6 @@ def make_histogram(values, bins):
 # X: the order is BGR now
 def image(tag, tensor):
     """Outputs a `Summary` protocol buffer with images."""
-    tag = _clean_tag(tag)
     # X: just get the output of the images tiled if needed
     tensor = make_np(tensor, 'IMG')
     # assuming the values are within [0,255] now

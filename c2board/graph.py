@@ -291,7 +291,7 @@ def _clear_debug_info(ops):
         if op.HasField('debug_info'):
             op.ClearField('debug_info')
 
-def _get_gpu_zero(ops):
+def _get_gpu_zero(track_blob_names, ops):
     # X: check if it starts with gpu zero
     def f(op):
         output = str(op.output[0])
@@ -304,7 +304,7 @@ def _get_gpu_zero(ops):
     def g(name):
         new_name = GPU0.sub('', name)
         return new_name
-    _rename_all(None, new_ops, g)
+    _rename_all(track_blob_names, new_ops, g)
     return new_ops
 
 def _remove_unwanted(ops):
@@ -345,9 +345,9 @@ def _compute_in_out(ops):
 
     input_blobs = list(in_blobs.difference(out_blobs))
     output_blobs = list(out_blobs.difference(in_blobs))
-    inter_blobs = { b:1 for b in output_blobs if b.startswith('_')}
+    inter_blobs = { b:1 for b in output_blobs if b.startswith('_') }
     # X: now reset the actual output
-    output_blobs = [ b for b in output_blobs if b not in inter_blobs]
+    output_blobs = [ b for b in output_blobs if b not in inter_blobs ]
 
     return input_blobs, inter_blobs, output_blobs
 
@@ -357,33 +357,32 @@ def _operators_to_graph_def(ops,
                             single_gpu=False,
                             remove_unwanted=True,
                             with_gradient_scope=True,
-                            custom_rename=None,
-                            track_blob_names=None):
+                            custom_rename=None):
+    # X: this is to track how the blob names are changed
+    # X: each key is the final name, and each value is the original name
+    track_blob_names = {}
+    track_blob_names.update(_get_blob_names(ops))
     if clear_debug_info:
         _clear_debug_info(ops)
     # X: if the architecture is crated by some 
     if single_gpu:
-        ops = _get_gpu_zero(ops)
+        ops = _get_gpu_zero(track_blob_names, ops)
     if remove_unwanted:
         # X: for now we will still keep the inputs from other gpus
         ops = _remove_unwanted(ops)
-    # X: this is to track how the blob names are changed
-    # X: each key is the final name, and each value is the original name
-    if track_blob_names:
-        track_blob_names.clear()
-        track_blob_names.update(_get_blob_names(ops))
     # X: this is necessary since caffe can have in-place operator
     _convert_to_ssa(track_blob_names, ops)
     # X: first replace weights and biases, so they look similar
     _formalize_for_tensorflow(track_blob_names, ops)
     # X: this is to necessary
     _replace_colons(track_blob_names, ops)
+    # X: allow an extra function to rename and customize
+    # X: it comes first before the entire scope is changed by gradient
+    if custom_rename:
+        _rename_all(track_blob_names, ops, custom_rename)
     # X: special handles for gradients related
     if with_gradient_scope:
         _add_gradient_scope(track_blob_names, ops)
-    # X: allow an extra function to rename and customize
-    if custom_rename:
-        _rename_all(track_blob_names, ops, custom_rename)
 
     input_blobs, inter_blobs, _ = _compute_in_out(ops)
     # X: apparently the external inputs are missing
@@ -396,7 +395,7 @@ def _operators_to_graph_def(ops,
     for op in ops:
         current_graph.node.extend(_operator_to_node(op, inter_blobs, seen))
 
-    return current_graph
+    return current_graph, track_blob_names
 
 def model_to_graph(model, **kwargs):
     # X: for some reason it needs to get the initialization operations as well 
@@ -413,5 +412,4 @@ def protos_to_graph(nets, **kwargs):
         _propagate_device_option(net)
     ops = [op for net in nets for op in net.op]
     # X: ignore the output there, should be inferred
-    current_graph = _operators_to_graph_def(ops, **kwargs)
-    return current_graph
+    return _operators_to_graph_def(ops, **kwargs)
