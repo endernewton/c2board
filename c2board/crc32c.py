@@ -1,4 +1,3 @@
-# X: I am not sure what does this mean
 import array
 
 CRC_TABLE = (

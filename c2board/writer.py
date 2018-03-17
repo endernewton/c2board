@@ -66,25 +66,17 @@ class FileWriter(object):
 # X: the biggest class to handle events
 class SummaryWriter(object):
     """Writes `Summary` directly to event files."""
-    def __init__(self, log_dir=None, tag='default'):
+    def __init__(self, log_dir=None, tag='default',bins='auto'):
         if not log_dir:
             # X: just create a name for the log files
             log_dir = os.path.join('runs', tag)
         self._file_writer = FileWriter(logdir=log_dir)
-        # X: next is to create bins, amazing that it can fit all the values
-        v = 1E-12
-        buckets = []
-        neg_buckets = []
-        while v < 1E20:
-            buckets.append(v)
-            neg_buckets.append(-v)
-            v *= 1.1
-        self.default_bins = neg_buckets[::-1] + [0] + buckets
-        self.text_tags = []
         self.scalar_dict = {}
         self.histogram_dict = {}
+        self.default_bins = bins
         self.image_dict = {}
         self.text_dir = None
+        self.text_tags = []
         self._track_blob_names = {}
         self._reversed_block_names = {}
 
@@ -142,11 +134,9 @@ class SummaryWriter(object):
         self._file_writer.add_summary(summary.scalar(tag, scalar_value), 
                                     global_step)
 
-    def add_histogram(self, tag, values, global_step, bins='tensorflow'):
+    def add_histogram(self, tag, values, global_step):
         """Add histogram to summary."""
-        if bins == 'tensorflow':
-            bins = self.default_bins
-        self._file_writer.add_summary(summary.histogram(tag, values, bins), 
+        self._file_writer.add_summary(summary.histogram(tag, values, self.default_bins), 
                                     global_step)
 
     def add_image(self, tag, img_tensor, global_step):
@@ -163,8 +153,8 @@ class SummaryWriter(object):
             self.text_tags.append(tag)
             if not self.text_dir:
                 text_dir =os.path.join(self._file_writer.get_logdir(),
-                                                    'plugins',
-                                                    'tensorboard_text')
+                                        'plugins',
+                                        'tensorboard_text')
                 os.makedirs(text_dir)
             with open(os.path.join(text_dir, 'tensors.json'), 'w') as fp:
                 json.dump(self.text_tags, fp)

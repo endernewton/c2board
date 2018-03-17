@@ -1,5 +1,9 @@
 # X: this should be the script to convert any objects to numpy arrays
 # X: do not do any image processing here
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import numpy as np
 
 from caffe2.python import workspace

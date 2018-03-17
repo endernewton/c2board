@@ -28,14 +28,14 @@ def clean_tag(name):
     return name
 
 # X: this is to get the scalar out and 
-def scalar(name, scalar, collections=None):
+def scalar(name, scalar):
     """Assume for the scalar values are NOT needed to fetch."""
     assert np.isscalar(scalar), 'ERROR: scalar values are not to be fetched'
     scalar = np.float32(scalar)
     return Summary(value=[Summary.Value(tag=name, simple_value=scalar)])
 
 # X: for histogram
-def histogram(name, values, bins, collections=None):
+def histogram(name, values, bins):
     """Outputs a `Summary` protocol buffer with a histogram."""
     # retrieve values 
     values = make_np(values)
@@ -47,7 +47,7 @@ def make_histogram(values, bins):
     """Convert values into a histogram proto using logic from histogram.cc."""
     values = values.reshape(-1)
     counts, limits = np.histogram(values, bins=bins)
-    # X: why?
+    counts = counts.astype(np.float64) / np.float64(values.size)
     limits = limits[1:]
 
     sum_sq = values.dot(values)
