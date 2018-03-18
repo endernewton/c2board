@@ -1,4 +1,4 @@
-"""Provides an API for generating Event protocol buffers."""
+'''Provides an API for generating Event protocol buffers.'''
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -20,21 +20,21 @@ import c2board.summary as summary
 
 
 class FileWriter(object):
-    """Writes `Summary` protocol buffers to event files."""
-
+    '''Write `Summary` protocol buffers to event files.'''
     def __init__(self, 
                 logdir,
                 max_queue=10,
                 flush_secs=120):
-        """Creates a `SummaryWriter` and an event file."""
+        '''Create a `SummaryWriter` and an event file.'''
         self._event_writer = EventFileWriter(logdir, max_queue, flush_secs)
         self._closed = False
 
     def get_logdir(self):
+        '''Return the directory.'''
         return self._event_writer.get_logdir()
 
     def add_summary(self, summary, global_step=None):
-        """Adds a `Summary` protocol buffer to the event file."""
+        '''Add a `Summary` protocol buffer to the event file.'''
         if isinstance(summary, bytes):
             summ = summary_pb2.Summary()
             summ.ParseFromString(summary)
@@ -42,36 +42,36 @@ class FileWriter(object):
         event = event_pb2.Event(summary=summary)
         self._add_event(event, global_step)
 
-    # X: this is the function to add the graph to the event
     def add_graph(self, graph):
-        """Adds a `Graph` protocol buffer to the event file."""
+        '''Add a `Graph` protocol buffer to the event file.'''
         event = event_pb2.Event(graph_def=graph.SerializeToString())
         self._add_event(event, None)
 
-    # X: the underlying function to add an event
     def _add_event(self, event, step):
+        '''General function to add the event.'''
         event.wall_time = time.time()
         if step is not None:
             event.step = int(step)
         self._event_writer.add_event(event)
 
     def flush(self):
+        '''Flush the event writer.'''
         self._event_writer.flush()
 
     def close(self):
+        '''Close the file writer.'''
         self._event_writer.close()
         self._closed = True
 
 
-# X: the biggest class to handle events
 class SummaryWriter(object):
-    """Writes `Summary` directly to event files."""
+    '''Write `Summary` directly to event files.'''
     def __init__(self, log_dir=None, tag='default',bins=100):
+        '''Initialize the summary writer.'''
         if not log_dir:
-            # X: just create a name for the log files
+            # Default: log to runs/
             log_dir = os.path.join('runs', tag)
         self._file_writer = FileWriter(logdir=log_dir)
-        self.scalar_dict = {}
         self.histogram_dict = {}
         self.default_bins = bins
         self.image_dict = {}
@@ -80,47 +80,47 @@ class SummaryWriter(object):
         self._track_blob_names = {}
         self._reversed_block_names = {}
 
-    def append_scalar(self, name):
-        self.scalar_dict[name] = []
-
-    # X: this is done during the construction of the graph, so just append
     def append_histogram(self, name):
-        # X: later it can be mapped to many names
+        '''Append the name of the blobs to a list for histograms.'''
         self.histogram_dict[name] = name
 
     def append_image(self, name):
+        '''Append the name of the blobs to a list for images.'''
         self.image_dict[name] = name
 
     def reverse_map(self):
+        '''Reverse the map from the graph.'''
         for key, value in six.iteritems(self._track_blob_names):
             if value in self._reversed_block_names:
                 self._reversed_block_names[value].append(key)
             else:
                 self._reversed_block_names[value] = [key]
 
-    # X: first need to check we do not double dump the blobs
     def check_names(self):
+        '''Make sure we do not double dump the blobs.'''
         assert len(self.histogram_dict) == len(set(self.histogram_dict)), \
                 "ERROR: duplicate name to account histograms"
         assert len(self.image_dict) == len(set(self.image_dict)), \
                 "ERROR: duplicate name to account images"
 
     def replace_names(self, dictionary):
+        '''Replace the names according to the graph.'''
         GPU = re.compile('gpu_[0-9]+/')
 
         for key in dictionary.keys():
-            # X: remove GPU information, assume it is data parallelism
-            # TODO: make it applicable to everything
+            # Remove GPU information, assume it is data parallelism
+            # TODO(xinleic): make it applicable to more general cases
             match = GPU.match(key).group()
             key0 = key.replace(match, 'gpu_0/')
             assert key0 in self._reversed_block_names, \
                              "ERROR: {} not found in blob names!".format(key0)
             values = self._reversed_block_names[key0]
-            # X: hack, just get the common ones
+            # Hack, just get the common ones
             value = summary.clean_tag(match + os.path.commonprefix(values))
             dictionary[key] = value
 
     def sort_out_names(self):
+        '''Wrapper function to replace names.'''
         if self._track_blob_names:
             if not self._reversed_block_names:
                 self.reverse_map()
@@ -128,29 +128,24 @@ class SummaryWriter(object):
             self.replace_names(self.histogram_dict)
             self.replace_names(self.image_dict)
 
-    def add_scalar(self, tag, scalar_value, global_step):
-        """Add scalar data to summary."""
+    def _add_scalar(self, tag, scalar_value, global_step):
+        '''Add scalar data to summary.'''
         self._file_writer.add_summary(summary.scalar(tag, scalar_value), 
                                     global_step)
 
-    def write_scalars(self, dictionary, global_step):
-        for key, value in six.iteritems(dictionary):
-            self.add_scalar(key, value, global_step)
-
-    def add_histogram(self, tag, values, global_step):
-        """Add histogram to summary."""
+    def _add_histogram(self, tag, values, global_step):
+        '''Add histogram to summary.'''
         self._file_writer.add_summary(summary.histogram(tag, values, self.default_bins), 
                                     global_step)
 
-    def add_image(self, tag, img_tensor, global_step):
-        """Add image data to summary."""
-        self._file_writer.add_summary(summary.image(tag, img_tensor), 
+    def _add_image(self, tag, img_tensor, global_step, **kwargs):
+        '''Add image data to summary.'''
+        self._file_writer.add_summary(summary.image(tag, img_tensor, **kwargs), 
                                     global_step)
 
-    def add_text(self, tag, text_string, global_step):
-        """Add text data to summary."""
+    def _add_text(self, tag, text_string, global_step):
+        '''Add text data to summary.'''
         self._file_writer.add_summary(summary.text(tag, text_string), global_step)
-        # X: seems like all the text tags are added to a json file
         if tag not in self.text_tags:
             self.text_tags.append(tag)
             if not self.text_dir:
@@ -161,8 +156,24 @@ class SummaryWriter(object):
             with open(os.path.join(text_dir, 'tensors.json'), 'w') as fp:
                 json.dump(self.text_tags, fp)
 
-    # X: graph is the last part
-    def add_graph(self, model=None, nets=None, protos=None, **kwargs):
+    def add_audio(self, 
+                tag, 
+                snd_tensor, 
+                global_step, 
+                sample_rate=44100):
+        raise NotImplementedError
+
+    def add_pr_curve(self, 
+                    tag, 
+                    labels, 
+                    predictions, 
+                    global_step, 
+                    num_thresholds=127, 
+                    weights=None):
+        raise NotImplementedError
+
+    def write_graph(self, model=None, nets=None, protos=None, **kwargs):
+        '''Write graph to the summary.'''
         if not model and not nets and not protos:
             raise ValueError("input must be either a model or a list of nets")
         if model:
@@ -173,27 +184,24 @@ class SummaryWriter(object):
             current_graph, track_blob_names = protos_to_graph(protos, **kwargs)
         self._file_writer.add_graph(current_graph)
         self._track_blob_names = track_blob_names
-        # X: once the graph is built, one can just map the blobs
+        # Once the graph is built, one can just map the blobs
         self.check_names()
         self.sort_out_names()
 
-    def add_audio(self, tag, snd_tensor, global_step=None, sample_rate=44100):
-        raise NotImplementedError
+    def write_scalars(self, dictionary, global_step):
+        '''Write multiple scalars to summary.'''
+        for key, value in six.iteritems(dictionary):
+            self._add_scalar(key, value, global_step)
 
-    def add_pr_curve(self, tag, labels, predictions, 
-                    global_step=None, 
-                    num_thresholds=127, 
-                    weights=None):
-        raise NotImplementedError
-
-    # X: the function to call to dump the values
     def write_summaries(self, global_step):
+        '''Write histogram and image summaries.'''
         for key, value in six.iteritems(self.histogram_dict):
-            self.add_histogram(value, key, global_step)
+            self._add_histogram(value, key, global_step)
         for key, value in six.iteritems(self.image_dict):
-            self.add_image(value, key, global_step)
+            self._add_image(value, key, global_step)
 
     def close(self):
+        '''Close the writers.'''
         if not self._file_writer._closed:
             self._file_writer.flush()
             self._file_writer.close()

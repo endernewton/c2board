@@ -1,5 +1,3 @@
-# X: this should be the script to convert any objects to numpy arrays
-# X: do not do any image processing here
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -10,22 +8,21 @@ from caffe2.python import workspace
 
 
 def make_np(x, modality=None):
-    # if already numpy, return
+    '''Make any blob to numpy arrays.'''
     if isinstance(x, np.ndarray):
         return x
     assert isinstance(x, unicode), 'ERROR: should pass name of the blob here'
-    # X: everything else, just fetch the blob given the name
     return caffe2_num(x, modality)
 
 def caffe2_num(x, modality=None):
-    # get the string and output the caffe2 numpy array
+    '''Fetch blobs for caffe.'''
     x = workspace.FetchBlob(x)
     if modality == 'IMG':
         x = _prepare_image(x)
     return x
 
-# X: to put images in the grid
 def make_grid(I, ncols=4):
+    '''Make a grid view out of all the images.'''
     assert isinstance(I, np.ndarray), 'ERROR: should pass numpy array here'
     assert I.ndim == 4 and I.shape[1] == 3, \
         'ERROR: should have dimension for N to put them in grid'
@@ -44,10 +41,8 @@ def make_grid(I, ncols=4):
             i = i + 1
     return canvas
 
-# X: tensorflow is NHWC
-# X: caffe2 is NCHW
-# X: mean_pixs is in RGB order
-def _prepare_image(I, mean_pixs=(122.7717, 115.9465, 102.9801)):
+def _prepare_image(I):
+    '''Prepare images, such as changing the format, etc.'''
     assert isinstance(I, np.ndarray), 'ERROR: should pass numpy array here'
     assert I.ndim == 2 or I.ndim == 3 or I.ndim == 4, \
         'ERROR: image should have dimensions of 2, 3, or 4'
@@ -61,9 +56,9 @@ def _prepare_image(I, mean_pixs=(122.7717, 115.9465, 102.9801)):
     if I.ndim == 2:  # HxW
         I = np.expand_dims(I, 0)  # 1xHxW
         I = np.concatenate((I, I, I), 0)  # 3xHxW
-    # X: so that finally it is HWC
+    # Finally, HWC
     I = I.transpose(1, 2, 0)
-    # X: so the image is RGB instead of BGR
-    I = I[...,::-1] + mean_pixs
+    # RGB instead of BGR
+    I = I[...,::-1]
 
     return I
