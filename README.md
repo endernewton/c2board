@@ -7,7 +7,6 @@ A hacked-up visualization tool for [caffe2](https://caffe2.ai/). Specifically, i
 - Caffe2.
 - Tensorboard. The code is meaned to be standalone, so that you do not need to import **both** [tensorflow](https://www.tensorflow.org/) and caffe2 at the same time -- unexpected behaviors can occur. However, tensorboard needs to be installed somewhere (like in another [conda environment](https://conda.io/docs/user-guide/tasks/manage-environments.html)) for visualization, otherwise the dumped information is not useful by itself.
 - Python libraries:
-
   ```Shell
   # for conda users
   conda install protobuf
@@ -16,6 +15,7 @@ A hacked-up visualization tool for [caffe2](https://caffe2.ai/). Specifically, i
   ```
 
 ### Installation
+
 1. Clone the repository
   ```Shell
   git clone https://github.com/endernewton/c2board.git
