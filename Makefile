@@ -1,14 +1,6 @@
 .PHONY: default
 default: all
 
-.PHONY: proto
-proto:
-	protoc c2board/src/*.proto --python_out=.
-
-.PHONY: install
-install:
-	python2 setup.py install
-
 .PHONY: all
 all:
 	protoc c2board/src/*.proto --python_out=.
