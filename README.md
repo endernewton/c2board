@@ -16,6 +16,7 @@ A hacked-up visualization tool for [caffe2](https://caffe2.ai/). Specifically, i
   ```
 
 ### Installation
+
 1. Clone the repository
   ```Shell
   git clone https://github.com/endernewton/c2board.git
@@ -27,6 +28,8 @@ A hacked-up visualization tool for [caffe2](https://caffe2.ai/). Specifically, i
   ```
 
 ### Usage
+
+- From graph visualization. You can follow demo_graph.py.
 
 ### Screenshots
 
