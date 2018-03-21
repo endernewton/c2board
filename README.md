@@ -28,7 +28,8 @@ A hacked-up visualization tool for [caffe2](https://caffe2.ai/). Specifically, i
 
 ### Usage
 
-- From graph visualization. You can follow demo_graph.py.
+- For graph visualization, you can follow `demo_graph.py`.
+- For training statistics, please see 
 
 ### Screenshots
 

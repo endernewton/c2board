@@ -9,11 +9,13 @@ import re
 import six
 import time
 
+from caffe2.python import cnn, core
+from caffe2.proto import caffe2_pb2
+
 from c2board.src import event_pb2
 from c2board.src import summary_pb2
 from c2board.src import graph_pb2
 from c2board.x2num import make_np
-
 from c2board.event_file_writer import EventFileWriter
 from c2board.graph import model_to_graph, nets_to_graph, protos_to_graph
 import c2board.summary as summary
@@ -172,16 +174,19 @@ class SummaryWriter(object):
                     weights=None):
         raise NotImplementedError
 
-    def write_graph(self, model=None, nets=None, protos=None, **kwargs):
+    def write_graph(self, model_or_nets_or_protos=None, **kwargs):
         '''Write graph to the summary.'''
-        if not model and not nets and not protos:
-            raise ValueError("input must be either a model or a list of nets")
-        if model:
-            current_graph, track_blob_names = model_to_graph(model, **kwargs)
-        elif nets:
-            current_graph, track_blob_names = nets_to_graph(nets, **kwargs)
+        if isinstance(model_or_nets_or_protos, cnn.CNNModelHelper):
+            current_graph, track_blob_names = model_to_graph(model_or_nets_or_protos, **kwargs)
+        elif isinstance(model_or_nets_or_protos, list):
+            if isinstance(model_or_nets_or_protos[0], core.Net):
+                current_graph, track_blob_names = nets_to_graph(model_or_nets_or_protos, **kwargs)
+            elif isinstance(model_or_nets_or_protos, caffe2_pb2.NetDef):
+                current_graph, track_blob_names = protos_to_graph(model_or_nets_or_protos, **kwargs)
+            else:
+                raise NotImplementedError
         else:
-            current_graph, track_blob_names = protos_to_graph(protos, **kwargs)
+            raise NotImplementedError
         self._file_writer.add_graph(current_graph)
         self._track_blob_names = track_blob_names
         # Once the graph is built, one can just map the blobs

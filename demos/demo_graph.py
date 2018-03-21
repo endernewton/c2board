@@ -7,4 +7,4 @@ from caffe2.python.models import bvlc_alexnet
 
 
 with SummaryWriter(tag='bvlc_alexnet') as writer:
-    writer.add_graph(protos=[bvlc_alexnet.predict_net])
+    writer.add_graph([bvlc_alexnet.predict_net])
