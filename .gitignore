@@ -5,3 +5,4 @@ runs/*
 .dropbox.attr
 *.pyc
 *_pb2.py
+*.DS_Store

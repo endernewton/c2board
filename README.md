@@ -28,10 +28,12 @@ A hacked-up visualization tool for [caffe2](https://caffe2.ai/). Specifically, i
 
 ### Usage
 
-- For graph visualization, you can follow `demo_graph.py`.
-- For training statistics, please see 
+- For graph visualization, you can follow `demo_graph.py`. The main function to call is `writer.add_graph`, which accepts either a `CNNModelHelper`, or `Net`, or `NetDef` object to visualize.
+- Training statistics can be divided into two types:
+  - First, for scalars, they are usually losses, current iterations pre-computed, therefore we can directly store them without any additional effort. The relevant function to call is `writer.`.
 
 ### Screenshots
+<img src="screenshots/all.gif">
 
 ### References
 
