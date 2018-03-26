@@ -30,9 +30,11 @@ A hacked-up visualization tool for [caffe2](https://caffe2.ai/). Specifically, i
 
 - For graph visualization, you can follow `demo_graph.py`. The main function to call is `writer.add_graph`, which accepts either a `CNNModelHelper`, or `Net`, or `NetDef` object to visualize.
 - Training statistics can be divided into two types:
-  - First, for scalars, they are usually losses, current iterations pre-computed, therefore we can directly store them without any additional effort. The relevant function to call is `writer.`.
+  - First, for scalars, they are usually loss, current iteration pre-computed, therefore we can directly store them without any additional effort. The relevant function to call is `writer.write_scalars(dict, iter)` where `dict` is the dictionary of the scalars, and `iter` the current iteration.
+  - Second, for histograms and images, we need to call the `workspace.FetchBlob` function to fetch the values. For those, we first use `writer.append_histogram(name)` or `writer.append_image(name)` to build the list of blobs we are interested in when building up the graph. Then, during training we only need to call `writer.write_summaries(iter)` and the underlying method will take care of fetching blobs, computing histograms, etc.
 
 ### Screenshots
+
 <img src="screenshots/all.gif">
 
 ### References
