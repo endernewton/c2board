@@ -1,6 +1,6 @@
 # c2board
 
-A hacked-up visualization tool for [caffe2](https://caffe2.ai/). Specifically, it dumps the computation graph and the training statistics into a [tensorboard](https://www.tensorflow.org/programmers_guide/summaries_and_tensorboard) compatible format. Once it starts dumping, you can use tensorboard to visualize the results.
+A hacked-up visualization tool for [caffe2](https://caffe2.ai/). Specifically, it dumps the computation graph and the training statistics of caffe2 into a [tensorboard](https://www.tensorflow.org/programmers_guide/summaries_and_tensorboard) compatible format. Once it starts dumping, you can use tensorboard to visualize the results.
 
 ### Prerequisites
 
@@ -33,8 +33,9 @@ A hacked-up visualization tool for [caffe2](https://caffe2.ai/). Specifically, i
   - First, for scalars, they are usually loss, current iteration pre-computed, therefore we can directly store them without any additional effort. The relevant function to call is `writer.write_scalars(dict, iter)` where `dict` is the dictionary of the scalars, and `iter` the current iteration.
   - Second, for histograms and images, we need to call the `workspace.FetchBlob` function to fetch the values. For those, we first use `writer.append_histogram(name)` or `writer.append_image(name)` to build the list of blobs we are interested in when building up the graph. Then, during training we only need to call `writer.write_summaries(iter)` and the underlying method will take care of fetching blobs, computing histograms, etc.
 
-### Screenshots
+### Screen shots
 
+These screen shots are taken when training a detector with [detectron](https://github.com/facebookresearch/Detectron).
 <img src="screenshots/all.gif">
 
 ### References
