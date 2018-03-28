@@ -13,14 +13,8 @@ requirements = [
     'six',
 ]
 
-test_requirements = [
-    'pytest',
-]
-
 setup(
-    name='c2board',
-    test_suite='tests',
-    tests_require=test_requirements
+    name='c2board'
 )
 
 # python setup.py sdist bdist_wheel --universal
