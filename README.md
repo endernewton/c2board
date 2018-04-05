@@ -32,6 +32,7 @@ A hacked-up visualization tool for [caffe2](https://caffe2.ai/). Specifically, i
 - Training statistics can be divided into two types:
   - First, for scalars, they are usually loss, current iteration pre-computed, therefore we can directly store them without any additional effort. The relevant function to call is `writer.write_scalars(dict, iter)` where `dict` is the dictionary of the scalars, and `iter` the current iteration.
   - Second, for histograms and images, we need to call the `workspace.FetchBlob` function to fetch the values. For those, we first use `writer.append_histogram(name)` or `writer.append_image(name)` to build the list of blobs we are interested in when building up the graph. Then, during training we only need to call `writer.write_summaries(iter)` and the underlying method will take care of fetching blobs, computing histograms, etc.
+- When it starts dumping, you can just use the normal `tensorboard` command line to visualize things.
 
 ### Screen shots
 
