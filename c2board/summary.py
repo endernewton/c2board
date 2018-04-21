@@ -32,6 +32,9 @@ def scalar(name, scalar):
 def histogram(name, values, bins):
     '''Outputs a `Summary` protocol buffer with a histogram.'''
     values = make_np(values)
+    return self.histogram_with_values(name, values, bins)
+
+def histogram_with_values(name, values, bins):
     hist = make_histogram(values.astype(np.float32, copy=False), bins)
     return Summary(value=[Summary.Value(tag=name, histo=hist)])
 
@@ -51,8 +54,7 @@ def make_histogram(values, bins):
                           bucket_limit=limits,
                           bucket=counts)
 
-def image(
-        tag, 
+def image(tag, 
         tensor, 
         rescale=0.6,
         mean_pixs=(122.7717, 115.9465, 102.9801)):

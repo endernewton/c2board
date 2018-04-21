@@ -15,9 +15,9 @@ from caffe2.proto import caffe2_pb2
 from c2board.src import event_pb2
 from c2board.src import summary_pb2
 from c2board.src import graph_pb2
-from c2board.x2num import make_np
 from c2board.event_file_writer import EventFileWriter
 from c2board.graph import model_to_graph, nets_to_graph, protos_to_graph
+from c2board.x2num import make_nps
 import c2board.summary as summary
 
 
@@ -75,6 +75,8 @@ class SummaryWriter(object):
             log_dir = os.path.join('runs', tag)
         self._file_writer = FileWriter(logdir=log_dir)
         self.histogram_dict = {}
+        self.histogram_keys = []
+        self.histogram_values = []
         self.default_bins = bins
         self.image_dict = {}
         self.text_dir = None
@@ -128,6 +130,9 @@ class SummaryWriter(object):
                 self.reverse_map()
 
             self.replace_names(self.histogram_dict)
+            for key, value in six.iteritems(self.histogram_dict):
+                self.histogram_keys.append(key)
+                self.histogram_values.append(value)
             self.replace_names(self.image_dict)
 
     def _add_scalar(self, tag, scalar_value, global_step):
@@ -139,6 +144,15 @@ class SummaryWriter(object):
         '''Add histogram to summary.'''
         self._file_writer.add_summary(summary.histogram(tag, values, self.default_bins), 
                                     global_step)
+
+    def _add_histograms(self, global_step):
+        '''Add multiple histograms to summary.'''
+        values = make_nps(self.histogram_keys)
+        for name, value in zip(self.histogram_values, values):
+            self._file_writer.add_summary(summary.histogram_with_values(name, 
+                                                                        value, 
+                                                                        self.default_bins),
+                                        global_step)
 
     def _add_image(self, tag, img_tensor, global_step, **kwargs):
         '''Add image data to summary.'''
@@ -200,8 +214,9 @@ class SummaryWriter(object):
 
     def write_summaries(self, global_step):
         '''Write histogram and image summaries.'''
-        for key, value in six.iteritems(self.histogram_dict):
-            self._add_histogram(value, key, global_step)
+        # for key, value in six.iteritems(self.histogram_dict):
+        #     self._add_histogram(value, key, global_step)
+        self._add_histograms(global_step)
         for key, value in six.iteritems(self.image_dict):
             self._add_image(value, key, global_step)
 

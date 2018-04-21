@@ -6,6 +6,9 @@ import numpy as np
 
 from caffe2.python import workspace
 
+def make_nps(xs):
+    assert isinstance(xs, list), 'ERROR: should pass list of names of the blobs'
+    return workspace.FetchBlobs(xs)
 
 def make_np(x, modality=None):
     '''Make any blob to numpy arrays.'''
