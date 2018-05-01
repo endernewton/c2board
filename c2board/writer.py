@@ -79,6 +79,7 @@ class SummaryWriter(object):
         self.histogram_values = []
         self.default_bins = bins
         self.image_dict = {}
+        self.rois_dict = {}
         self.text_dir = None
         self.text_tags = []
         self._track_blob_names = {}
@@ -91,6 +92,11 @@ class SummaryWriter(object):
     def append_image(self, name):
         '''Append the name of the blobs to a list for images.'''
         self.image_dict[name] = name
+
+    def append_image_boxes(self, im_name, box_name):
+        self.histogram_dict[box_name] = box_name
+        self.image_dict[im_name] = im_name
+        self.rois_dict[im_name] = box_name
 
     def reverse_map(self):
         '''Reverse the map from the graph.'''
@@ -156,8 +162,21 @@ class SummaryWriter(object):
 
     def _add_image(self, tag, img_tensor, global_step, **kwargs):
         '''Add image data to summary.'''
-        self._file_writer.add_summary(summary.image(tag, img_tensor, **kwargs), 
-                                    global_step)
+        res = summary.image(tag, img_tensor, **kwargs)
+        if isinstance(res, list):
+            for r in res:
+                self._file_writer.add_summary(r, global_step)
+        else:
+            self._file_writer.add_summary(res, global_step)
+
+    def _add_image_boxes(self, tag, img_tensor, box_tensor, global_step, **kwargs):
+        '''Add image data to summary.'''
+        res = summary.image_boxes(tag, img_tensor, box_tensor, **kwargs)
+        if isinstance(res, list):
+            for r in res:
+                self._file_writer.add_summary(r, global_step)
+        else:
+            self._file_writer.add_summary(res, global_step)
 
     def _add_text(self, tag, text_string, global_step):
         '''Add text data to summary.'''
@@ -217,8 +236,12 @@ class SummaryWriter(object):
         # for key, value in six.iteritems(self.histogram_dict):
         #     self._add_histogram(value, key, global_step)
         self._add_histograms(global_step)
-        for key, value in six.iteritems(self.image_dict):
-            self._add_image(value, key, global_step)
+        if self.rois_dict:
+            for im_name, box_name in six.iteritems(self.rois_dict):
+                self._add_image_boxes(box_name, im_name, box_name, global_step)
+        else:
+            for key, value in six.iteritems(self.image_dict):
+                self._add_image(value, key, global_step)
 
     def close(self):
         '''Close the writers.'''

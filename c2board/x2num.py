@@ -53,15 +53,22 @@ def _prepare_image(I):
         if I.shape[1] == 1:  # N1HW
             I = np.concatenate((I, I, I), 1)  # N3HW
         assert I.shape[1] == 3
-        I = make_grid(I)  # 3xHxW
-    if I.ndim == 3 and I.shape[0] == 1:  # 1xHxW
+        I = np.split(I, I.shape[0], 0)  # 1x3xHxW
+        I = [np.squeeze(i) for i in I]  # 3xHxW
+        I = [i.transpose(1,2,0) for i in I]
+        I = [i[...,::-1] for i in I]
+    elif I.ndim == 3 and I.shape[0] == 1:  # 1xHxW
         I = np.concatenate((I, I, I), 0)  # 3xHxW
-    if I.ndim == 2:  # HxW
+        # Finally, HWC
+        I = I.transpose(1, 2, 0)
+        # RGB instead of BGR
+        I = I[...,::-1]
+    elif I.ndim == 2:  # HxW
         I = np.expand_dims(I, 0)  # 1xHxW
         I = np.concatenate((I, I, I), 0)  # 3xHxW
-    # Finally, HWC
-    I = I.transpose(1, 2, 0)
-    # RGB instead of BGR
-    I = I[...,::-1]
+        # Finally, HWC
+        I = I.transpose(1, 2, 0)
+        # RGB instead of BGR
+        I = I[...,::-1]
 
     return I
