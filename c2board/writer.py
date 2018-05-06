@@ -214,7 +214,7 @@ class SummaryWriter(object):
         elif isinstance(model_or_nets_or_protos, list):
             if isinstance(model_or_nets_or_protos[0], core.Net):
                 current_graph, track_blob_names = nets_to_graph(model_or_nets_or_protos, **kwargs)
-            elif isinstance(model_or_nets_or_protos, caffe2_pb2.NetDef):
+            elif isinstance(model_or_nets_or_protos[0], caffe2_pb2.NetDef):
                 current_graph, track_blob_names = protos_to_graph(model_or_nets_or_protos, **kwargs)
             else:
                 raise NotImplementedError
