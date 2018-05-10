@@ -120,6 +120,7 @@ def image(tag,
             t = t + mean_pixs
             image = make_image(t.astype(np.uint8, copy=False), rescale=rescale)
             res.append(Summary(value=[Summary.Value(tag=tag + ('_%d' % i), image=image)]))
+        return res
     else:
         tensor = tensor + mean_pixs
         # Assuming the values are within [0,255] now
