@@ -94,6 +94,14 @@ def histogram_with_values(name, values, bins):
 
 def make_histogram(values, bins):
     '''Convert values into a histogram proto.'''
+    if values.size == 0:
+      return HistogramProto(min=0.,
+                            max=0.,
+                            num=0,
+                            sum=0.,
+                            sum_squares=0.,
+                            bucket_limit=[0.],
+                            bucket=[0.])
     values = values.reshape(-1)
     counts, limits = np.histogram(values, bins=bins)
     counts = counts.astype(np.float64) / np.float64(values.size)
@@ -120,9 +128,29 @@ def image(tag,
             t = t + mean_pixs
             image = make_image(t.astype(np.uint8, copy=False), rescale=rescale)
             res.append(Summary(value=[Summary.Value(tag=tag + ('_%d' % i), image=image)]))
+        return res
     else:
         tensor = tensor + mean_pixs
         # Assuming the values are within [0,255] now
+        image = make_image(tensor.astype(np.uint8, copy=False), rescale=rescale)
+        return Summary(value=[Summary.Value(tag=tag, image=image)])
+
+def memory(tag,
+          tensor,
+          rescale=4.0,
+          value_scale=1.0):
+    tensor = make_np(tensor, 'MEM')
+    if isinstance(tensor, list):
+        res = []
+        for i, t in enumerate(tensor):
+            t = np.minimum(t * (255. / value_scale), 255.)
+            t = np.concatenate((t, t, t), axis=2)
+            image = make_image(t.astype(np.uint8, copy=False), rescale=rescale)
+            res.append(Summary(value=[Summary.Value(tag=tag + ('_%d' % i), image=image)]))
+        return res
+    else:
+        t = np.minimum(tensor * (255. / value_scale), 255.)
+        tensor = np.concatenate((t, t, t), axis=2)
         image = make_image(tensor.astype(np.uint8, copy=False), rescale=rescale)
         return Summary(value=[Summary.Value(tag=tag, image=image)])
 

@@ -22,6 +22,8 @@ def caffe2_num(x, modality=None):
     x = workspace.FetchBlob(x)
     if modality == 'IMG':
         x = _prepare_image(x)
+    elif modality == 'MEM':
+        x =  _prepare_mem(x)
     return x
 
 def make_grid(I, ncols=4):
@@ -70,5 +72,21 @@ def _prepare_image(I):
         I = I.transpose(1, 2, 0)
         # RGB instead of BGR
         I = I[...,::-1]
+
+    return I
+
+def _prepare_mem(I):
+    '''Prepare images, such as changing the format, etc.'''
+    assert isinstance(I, np.ndarray), 'ERROR: should pass numpy array here'
+    assert I.ndim == 3 or I.ndim == 4, \
+        'ERROR: memory should have dimensions of 3, or 4'
+    if I.ndim == 4:  # NCHW
+        I = np.split(I, I.shape[0], 0)  # nxCxHxW
+        I = [np.squeeze(i, axis=0) for i in I]  # CxHxW
+        I = [i.transpose(1, 2, 0) for i in I]  # HxWxC
+        I = [np.mean(np.absolute(i), axis=2, keepdims=True) for i in I]  # HxWx1
+    elif I.ndim == 3:  # CxHxW
+        I = I.transpose(1, 2, 0) # HxWxC
+        I = np.mean(np.absolute(I), axis=2, keepdims=True)
 
     return I

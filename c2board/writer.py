@@ -80,6 +80,7 @@ class SummaryWriter(object):
         self.default_bins = bins
         self.image_dict = {}
         self.rois_dict = {}
+        self.mem_dict = {}
         self.text_dir = None
         self.text_tags = []
         self._track_blob_names = {}
@@ -98,6 +99,9 @@ class SummaryWriter(object):
         self.image_dict[im_name] = im_name
         self.rois_dict[im_name] = box_name
 
+    def append_mem(self, name):
+        self.mem_dict[name] = name
+
     def reverse_map(self):
         '''Reverse the map from the graph.'''
         for key, value in six.iteritems(self._track_blob_names):
@@ -112,6 +116,8 @@ class SummaryWriter(object):
                 "ERROR: duplicate name to account histograms"
         assert len(self.image_dict) == len(set(self.image_dict)), \
                 "ERROR: duplicate name to account images"
+        assert len(self.mem_dict) == len(set(self.mem_dict)), \
+                "ERROR: duplicate name to account memories"
 
     def replace_names(self, dictionary):
         '''Replace the names according to the graph.'''
@@ -140,6 +146,7 @@ class SummaryWriter(object):
                 self.histogram_keys.append(key)
                 self.histogram_values.append(value)
             self.replace_names(self.image_dict)
+            self.replace_names(self.mem_dict)
 
     def _add_scalar(self, tag, scalar_value, global_step):
         '''Add scalar data to summary.'''
@@ -158,11 +165,20 @@ class SummaryWriter(object):
             self._file_writer.add_summary(summary.histogram_with_values(name, 
                                                                         value, 
                                                                         self.default_bins),
-                                        global_step)
+                                                                        global_step)
 
     def _add_image(self, tag, img_tensor, global_step, **kwargs):
         '''Add image data to summary.'''
         res = summary.image(tag, img_tensor, **kwargs)
+        if isinstance(res, list):
+            for r in res:
+                self._file_writer.add_summary(r, global_step)
+        else:
+            self._file_writer.add_summary(res, global_step)
+
+    def _add_mem(self, tag, mem_tensor, global_step, **kwargs):
+        '''Add memory data to summary.'''
+        res = summary.memory(tag, mem_tensor, **kwargs)
         if isinstance(res, list):
             for r in res:
                 self._file_writer.add_summary(r, global_step)
@@ -242,6 +258,8 @@ class SummaryWriter(object):
         else:
             for key, value in six.iteritems(self.image_dict):
                 self._add_image(value, key, global_step)
+        for key, value in six.iteritems(self.mem_dict):
+                self._add_mem(value, key, global_step)
 
     def close(self):
         '''Close the writers.'''
